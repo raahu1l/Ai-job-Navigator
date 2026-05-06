@@ -1,8 +1,4 @@
-function SkillGap({ results }) {
-  if (!results || results.length === 0) {
-    return <p>Analyze your skills to see gaps</p>;
-  }
-
+function SkillGap({ results, className = "" }) {
   const missingSkillCounts = results.reduce((acc, job) => {
     const missingSkills = Array.isArray(job.missing_skills) ? job.missing_skills : [];
 
@@ -20,24 +16,24 @@ function SkillGap({ results }) {
   const [topSkill, topSkillCount] = topMissingSkills[0] || [];
 
   return (
-    <div>
-      <h3>Top Missing Skills</h3>
+    <div className={className}>
+      <h3 className="card-title">Top Missing Skills</h3>
 
       {topMissingSkills.length === 0 ? (
         <p>No missing skills found in current results</p>
       ) : (
         <>
-          <ul>
+          <div className="insight-box">
+            Learn {topSkill} to unlock {topSkillCount} more jobs
+          </div>
+          <ul className="gap-list">
             {topMissingSkills.map(([skill, count]) => (
-              <li key={skill}>
-                {skill}: {count}
+              <li key={skill} className="gap-row">
+                <span className="gap-skill">{skill}</span>
+                <span className="gap-badge">{count}</span>
               </li>
             ))}
           </ul>
-
-          <p>
-            Learn {topSkill} to unlock {topSkillCount} more jobs
-          </p>
         </>
       )}
     </div>
