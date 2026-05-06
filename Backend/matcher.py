@@ -11,6 +11,9 @@ with DATA_PATH.open("r", encoding="utf-8") as f:
 
 def analyze(user_skills: list) -> list:
     user_skill_set = {str(skill).strip().lower() for skill in user_skills if str(skill).strip()}
+    if not user_skill_set:
+        return []
+
     results = []
 
     for job in JOBS:
@@ -46,7 +49,26 @@ def analyze(user_skills: list) -> list:
         )
 
     results.sort(key=lambda item: item["match_score"], reverse=True)
-    return results[:10]
+    if results:
+        return results[:10]
+
+    # Fallback: if none of the entered skills match the dataset vocabulary,
+    # still return jobs so the UI can show actionable missing-skill guidance.
+    fallback = []
+    for job in JOBS[:10]:
+        job_skills = [str(skill).strip() for skill in job.get("skills", []) if str(skill).strip()]
+        fallback.append(
+            {
+                "job_id": str(job.get("job_id", "")),
+                "title": job.get("title", ""),
+                "company": job.get("company", ""),
+                "match_score": 0.0,
+                "matched_skills": [],
+                "missing_skills": job_skills,
+            }
+        )
+
+    return fallback
 
 
 def get_trending(top_n: int = 15) -> list:
