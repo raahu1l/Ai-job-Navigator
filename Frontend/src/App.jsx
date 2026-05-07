@@ -10,7 +10,7 @@ import LearningPath from "./components/LearningPath";
 function App() {
   const [trending, setTrending] = useState([]);
   const [results, setResults] = useState([]);
-  const [skillsInput, setSkillsInput] = useState("");
+  const [exampleSkills, setExampleSkills] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [isResultsHighlighted, setIsResultsHighlighted] = useState(false);
@@ -106,12 +106,13 @@ function App() {
   };
 
   const runExample = (skills) => {
-    setSkillsInput(skills.join(", "));
+    setExampleSkills(skills);
     handleAnalyze(skills);
   };
 
   const handleClear = () => {
     setResults([]);
+    setExampleSkills([]);
     setMarketAnalysis(null);
     setLearningPath(null);
   };
@@ -212,8 +213,7 @@ function App() {
           <SkillInput
             onAnalyze={handleAnalyze}
             isLoading={isLoading}
-            skillsInput={skillsInput}
-            setSkillsInput={setSkillsInput}
+            exampleSkills={exampleSkills}
             hasResults={results.length > 0}
             onClear={handleClear}
           />
