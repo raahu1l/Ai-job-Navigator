@@ -18,7 +18,7 @@ function App() {
     const fetchTrending = async () => {
       try {
         setError("");
-        const response = await fetch("http://localhost:5000/api/trending");
+        const response = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/trending");
 
         if (!response.ok) {
           throw new Error("Failed to fetch trending skills");
@@ -39,7 +39,7 @@ function App() {
       setError("");
       setIsLoading(true);
 
-      const response = await fetch("http://localhost:5000/api/analyze", {
+      const response = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/analyze", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
