@@ -4,6 +4,8 @@ import SkillInput from "./components/SkillInput";
 import JobResults from "./components/JobResults";
 import SkillGap from "./components/SkillGap";
 import TrendChart from "./components/TrendChart";
+import MarketAnalysis from "./components/MarketAnalysis";
+import LearningPath from "./components/LearningPath";
 
 function App() {
   const [trending, setTrending] = useState([]);
@@ -12,6 +14,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [isResultsHighlighted, setIsResultsHighlighted] = useState(false);
+  const [marketAnalysis, setMarketAnalysis] = useState(null);
+  const [learningPath, setLearningPath] = useState(null);
   const resultsGridRef = useRef(null);
 
   useEffect(() => {
@@ -54,6 +58,36 @@ function App() {
       const data = await response.json();
       const nextResults = Array.isArray(data) ? data : [];
       setResults(nextResults);
+      setLearningPath(null);
+
+      const topTrendingSkills = trending
+        .slice(0, 5)
+        .map((item) => item?.skill)
+        .filter(Boolean);
+
+      try {
+        const marketResponse = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/market-analysis", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            trending_skills: topTrendingSkills,
+            user_skills: skills,
+          }),
+        });
+
+        if (marketResponse.ok) {
+          const marketData = await marketResponse.json();
+          setMarketAnalysis(marketData);
+          console.log("Market analysis response:", marketData);
+        } else {
+          setMarketAnalysis(null);
+        }
+      } catch (err) {
+        console.log("Market analysis error if any:", err);
+        setMarketAnalysis(null);
+      }
 
       if (nextResults.length > 0) {
         setIsResultsHighlighted(true);
@@ -78,6 +112,32 @@ function App() {
 
   const handleClear = () => {
     setResults([]);
+    setMarketAnalysis(null);
+    setLearningPath(null);
+  };
+
+  const handleGetLearningPath = async (job) => {
+    try {
+      const response = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/learning-path", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          missing_skills: job.missing_skills,
+          target_role: job.title,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch learning path");
+      }
+
+      const data = await response.json();
+      setLearningPath(data);
+    } catch (err) {
+      setError(err.message || "Something went wrong");
+    }
   };
 
   const uniqueMissingCount = results.length > 0
@@ -181,6 +241,8 @@ function App() {
           </div>
         )}
 
+        {marketAnalysis && <MarketAnalysis analysis={marketAnalysis} />}
+
         {results.length > 0 && (
           <div className="top-roles-bar">
             <span className="top-roles-label">
@@ -199,10 +261,12 @@ function App() {
           >
             <SkillGap results={results} className="gap-card" />
             <div className="jobs-column">
-              <JobResults results={results} />
+              <JobResults results={results} onGetLearningPath={handleGetLearningPath} />
             </div>
           </div>
         )}
+
+        {learningPath && <LearningPath learningPath={learningPath} />}
       </main>
 
       <footer className="footer">

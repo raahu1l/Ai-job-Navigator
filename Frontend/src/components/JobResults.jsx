@@ -1,4 +1,4 @@
-function JobResults({ results }) {
+function JobResults({ results, onGetLearningPath }) {
   const getMatchScoreColor = (matchScore) => {
     if (matchScore >= 80) {
       return "#22C55E";
@@ -55,6 +55,13 @@ function JobResults({ results }) {
               ))}
             </div>
           </div>
+          <button
+            type="button"
+            className="learning-path-btn"
+            onClick={() => onGetLearningPath(job)}
+          >
+            Get Learning Path
+          </button>
         </div>
       ))}
     </>

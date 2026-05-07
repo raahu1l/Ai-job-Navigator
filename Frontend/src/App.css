@@ -368,3 +368,130 @@
   border-top: 1px solid var(--border);
   margin-top: 3rem;
 }
+
+.market-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.market-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-sm);
+}
+.market-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+.market-value {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  font-weight: 500;
+  line-height: 1.5;
+}
+.trend-growing { color: var(--success); }
+.trend-stable { color: #F59E0B; }
+.trend-declining { color: var(--danger); }
+
+.learning-path-btn {
+  background: transparent;
+  color: var(--accent);
+  border: 1.5px solid var(--accent);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font);
+  margin-top: 0.75rem;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+.learning-path-btn:hover {
+  background: var(--accent);
+  color: white;
+}
+
+.lp-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 1.75rem;
+  box-shadow: var(--shadow-md);
+  margin-top: 1.5rem;
+  border-top: 3px solid var(--accent);
+}
+.lp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.lp-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.lp-time {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  padding: 0.25rem 0.75rem;
+  border-radius: 99px;
+}
+.lp-message {
+  font-size: 0.95rem;
+  color: var(--accent);
+  font-weight: 500;
+  margin-bottom: 1.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--accent-light);
+  border-radius: 8px;
+}
+.lp-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.lp-step {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 0.75rem;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+.lp-step-num {
+  background: var(--accent);
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.lp-step-info { flex: 1; }
+.lp-step-skill {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.lp-step-resource {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 0.2rem;
+}
+.lp-step-time {
+  font-size: 0.75rem;
+  color: var(--accent);
+  font-weight: 500;
+  white-space: nowrap;
+}
