@@ -6,12 +6,21 @@ from crew import SkillNavCrew
 from job_fetcher import fetch_jobs
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://ai-job-navigator-gamma.vercel.app"
+]}})
 
 
 @app.get("/api/health")
 def health():
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/test")
+def test():
+    return {"status": "working"}
 
 
 @app.post("/api/analyze")

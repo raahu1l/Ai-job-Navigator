@@ -10,6 +10,8 @@ import LearningPath from "./components/LearningPath";
 function App() {
   const [trending, setTrending] = useState([]);
   const [results, setResults] = useState([]);
+  const [liveJobs, setLiveJobs] = useState([]);
+  const [location, setLocation] = useState("bangalore");
   const [exampleSkills, setExampleSkills] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -43,12 +45,31 @@ function App() {
       setError("");
       setIsLoading(true);
 
+      const fetchJobsResponse = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/fetch-jobs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          keywords: skills.join(" "),
+          location: location,
+        }),
+      });
+
+      if (!fetchJobsResponse.ok) {
+        throw new Error("Failed to fetch live jobs");
+      }
+
+      const fetchJobsData = await fetchJobsResponse.json();
+      const jobs = Array.isArray(fetchJobsData?.jobs) ? fetchJobsData.jobs : [];
+      setLiveJobs(jobs);
+
       const response = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/analyze", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ skills }),
+        body: JSON.stringify({ skills, job_results: jobs }),
       });
 
       if (!response.ok) {
@@ -112,6 +133,7 @@ function App() {
 
   const handleClear = () => {
     setResults([]);
+    setLiveJobs([]);
     setExampleSkills([]);
     setMarketAnalysis(null);
     setLearningPath(null);
@@ -216,6 +238,8 @@ function App() {
             exampleSkills={exampleSkills}
             hasResults={results.length > 0}
             onClear={handleClear}
+            location={location}
+            setLocation={setLocation}
           />
           {error && <p>{error}</p>}
         </div>

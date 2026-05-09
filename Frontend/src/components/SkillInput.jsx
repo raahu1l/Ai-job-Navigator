@@ -6,6 +6,8 @@ function SkillInput({
   hasResults,
   onClear,
   exampleSkills,
+  location,
+  setLocation,
 }) {
   const [skills, setSkills] = useState([]);
   const [inputValue, setInputValue] = useState("");
@@ -74,6 +76,22 @@ function SkillInput({
             placeholder={skills.length === 0 ? "Type a skill and press Enter..." : "Add more skills..."}
           />
         </div>
+        <select
+          className="location-select"
+          value={location}
+          onChange={(event) => setLocation(event.target.value)}
+        >
+          <option value="bangalore">Bangalore</option>
+          <option value="mumbai">Mumbai</option>
+          <option value="delhi">Delhi</option>
+          <option value="hyderabad">Hyderabad</option>
+          <option value="pune">Pune</option>
+          <option value="chennai">Chennai</option>
+          <option value="india">India</option>
+          <option value="usa">USA</option>
+          <option value="uk">UK</option>
+          <option value="remote">Remote</option>
+        </select>
         <button
           className="analyze-btn"
           onClick={handleSubmit}
@@ -81,12 +99,12 @@ function SkillInput({
         >
           {isLoading ? "Analyzing..." : "Analyze"}
         </button>
+        {hasResults && (
+          <button type="button" className="clear-btn" onClick={onClear}>
+            Clear
+          </button>
+        )}
       </div>
-      {hasResults && (
-        <button type="button" className="clear-btn" onClick={onClear}>
-          Clear
-        </button>
-      )}
     </div>
   );
 }
