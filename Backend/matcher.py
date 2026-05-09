@@ -1,6 +1,8 @@
 import json
-from collections import Counter
 from pathlib import Path
+
+from job_fetcher import fetch_jobs
+from technical_trending import trending_from_jobs
 
 
 DATA_PATH = Path(__file__).resolve().parent / "data" / "jobs.json"
@@ -72,21 +74,29 @@ def analyze(user_skills: list) -> list:
 
 
 def get_trending(top_n: int = 15) -> list:
-    skill_counter = Counter()
-    skill_display = {}
+    """
+    Technical skills only: parsed from live Adzuna job titles + descriptions
+    against a whitelist. Does not use legacy Kaggle `skills` categories.
+    Falls back to the same extraction on static jobs (title/description only).
+    """
+    result = fetch_jobs(
+        "software developer data engineer full stack",
+        "india",
+        results=50,
+    )
+    jobs = result.get("jobs") or []
+    trending = trending_from_jobs(jobs, top_n=top_n)
+    if trending:
+        print(
+            f"Trending skills: {len(trending)} entries from job fetch "
+            f"(source={result.get('source', '?')}, jobs={len(jobs)})"
+        )
+        return trending
 
-    for job in JOBS:
-        job_skills = job.get("skills", [])
-        unique_job_skills = {str(skill).strip() for skill in job_skills if str(skill).strip()}
+    # No whitelist hits from live/fallback fetch — try local JSON titles (no category fields)
+    trending = trending_from_jobs(JOBS, top_n=top_n)
+    if trending:
+        print(f"Trending skills: fallback static titles only, {len(trending)} entries")
+        return trending
 
-        for skill in unique_job_skills:
-            normalized_skill = skill.lower()
-            skill_counter[normalized_skill] += 1
-            if normalized_skill not in skill_display:
-                skill_display[normalized_skill] = skill
-
-    trending = []
-    for normalized_skill, count in skill_counter.most_common(top_n):
-        trending.append({"skill": skill_display[normalized_skill], "count": count})
-
-    return trending
+    return []

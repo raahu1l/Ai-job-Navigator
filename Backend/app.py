@@ -32,6 +32,7 @@ def analyze_route():
 
 @app.get("/api/trending")
 def trending_route():
+    """Technical skills from Adzuna titles/descriptions + whitelist (not Kaggle categories)."""
     return jsonify(get_trending())
 
 
