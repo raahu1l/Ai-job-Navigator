@@ -1,6 +1,7 @@
 import os
 import requests as req
 from dotenv import load_dotenv
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 load_dotenv()
 
@@ -15,78 +16,196 @@ COUNTRY_CODES = {
     "australia": "au",
     "germany": "de",
     "france": "fr",
-    "singapore": "sg"
+    "singapore": "sg",
 }
+
+
+def _redact_url_query(url_with_query: str) -> str:
+    """Log-safe URL: mask app_key values."""
+    try:
+        parts = urlsplit(url_with_query)
+        pairs = parse_qsl(parts.query, keep_blank_values=True)
+        safe = []
+        for k, v in pairs:
+            if k == "app_key" and v:
+                safe.append((k, f"{v[:4]}…" if len(v) > 4 else "***"))
+            else:
+                safe.append((k, v))
+        return urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, urlencode(safe), parts.fragment)
+        )
+    except Exception:
+        return "<url redact error>"
+
+
+def _build_debug(
+    *,
+    source: str,
+    request_url_redacted: str | None = None,
+    http_status: int | None = None,
+    adzuna_result_count: int | None = None,
+    fallback_reason: str | None = None,
+    error_body_snippet: str | None = None,
+    credentials_present: bool = False,
+) -> dict:
+    return {
+        "source": source,
+        "request_url_redacted": request_url_redacted,
+        "http_status": http_status,
+        "adzuna_raw_result_count": adzuna_result_count,
+        "fallback_reason": fallback_reason,
+        "error_body_snippet": error_body_snippet,
+        "credentials_present": credentials_present,
+    }
 
 
 def fetch_jobs(keywords: str, location: str = "india", results: int = 20) -> dict:
     """
     Fetch live jobs from Adzuna API.
-    Falls back to static jobs.json only if the API request fails, returns an error
-    status, rate-limits, or yields no job results.
+    Falls back to static jobs.json only on real failures (missing keys, HTTP errors,
+    network errors, invalid JSON). Empty HTTP 200 with zero results stays LIVE (empty list).
     """
+    cred_ok = bool(
+        ADZUNA_APP_ID
+        and str(ADZUNA_APP_ID).strip()
+        and ADZUNA_APP_KEY
+        and str(ADZUNA_APP_KEY).strip()
+    )
+
+    if not cred_ok:
+        print("Adzuna: credentials missing — check ADZUNA_APP_ID and ADZUNA_APP_KEY on the server")
+        print("Fallback dataset activated")
+        return _fallback_payload(
+            reason="missing_credentials",
+            debug_extra={"credentials_present": False},
+        )
+
+    country = COUNTRY_CODES.get(location.lower(), "in")
+    base_url = f"https://api.adzuna.com/v1/api/jobs/{country}/search/1"
+    params = {
+        "app_id": ADZUNA_APP_ID,
+        "app_key": ADZUNA_APP_KEY,
+        "results_per_page": results,
+        "what": keywords or "",
+    }
+    # Optional location filter for cities / regions (not a country code)
+    if location.lower() not in COUNTRY_CODES:
+        params["where"] = location
+
+    session = req.Session()
+    request = req.Request("GET", base_url, params=params)
+    prepped = session.prepare_request(request)
+
     try:
-        country = COUNTRY_CODES.get(location.lower(), "in")
-
-        url = f"https://api.adzuna.com/v1/api/jobs/{country}/search/1"
-        params = {
-            "app_id": ADZUNA_APP_ID,
-            "app_key": ADZUNA_APP_KEY,
-            "results_per_page": results,
-            "what": keywords,
-            "content-type": "application/json"
-        }
-
-        if location.lower() not in COUNTRY_CODES:
-            params["where"] = location
-
-        response = req.get(url, params=params, timeout=10)
-
-        if response.status_code != 200:
-            print(f"Adzuna API error: HTTP {response.status_code}")
-            if response.status_code == 429:
-                print("Adzuna rate limit (429) — using fallback")
-            return _fallback_payload(reason=f"http_{response.status_code}")
-
-        try:
-            data = response.json()
-        except ValueError as e:
-            print(f"Adzuna response not valid JSON: {e}")
-            return _fallback_payload(reason="invalid_json")
-
-        raw_results = data.get("results")
-        if not raw_results:
-            print("Adzuna returned empty results — using fallback")
-            return _fallback_payload(reason="empty_response")
-
-        jobs = []
-        for job in raw_results:
-            jobs.append({
-                "job_id": str(job.get("id", "")),
-                "title": job.get("title", ""),
-                "company": job.get("company", {}).get("display_name", "Unknown"),
-                "location": job.get("location", {}).get("display_name", location),
-                "description": job.get("description", ""),
-                "url": job.get("redirect_url", ""),
-                "salary_min": job.get("salary_min", 0),
-                "salary_max": job.get("salary_max", 0),
-                "skills": []
-            })
-
-        if not jobs:
-            print("Adzuna parsed zero jobs — using fallback")
-            return _fallback_payload(reason="empty_after_parse")
-
-        count = len(jobs)
-        print(f"Using LIVE Adzuna analysis — {count} job(s) fetched")
-        return {"jobs": jobs, "source": "adzuna", "count": count}
-
+        response = session.send(prepped, timeout=15)
     except req.RequestException as e:
-        print(f"Adzuna fetch error (network): {e}")
-        return _fallback_payload(reason="request_failed")
+        redacted = _redact_url_query(prepped.url)
+        print(f"Adzuna request URL (redacted): {redacted}")
+        print(f"Adzuna status: (no response) — network error: {e}")
+        print("Fallback dataset activated")
+        return _fallback_payload(
+            reason="request_failed",
+            debug_extra={
+                "request_url_redacted": redacted,
+                "http_status": None,
+                "error_body_snippet": str(e)[:500],
+                "credentials_present": True,
+            },
+        )
     except Exception as e:
-        print(f"Adzuna fetch error: {e}")
-        return _fallback_payload(reason="error")
+        redacted = _redact_url_query(prepped.url)
+        print(f"Adzuna request URL (redacted): {redacted}")
+        print(f"Adzuna unexpected error before parse: {e}")
+        print("Fallback dataset activated")
+        return _fallback_payload(
+            reason="error",
+            debug_extra={
+                "request_url_redacted": redacted,
+                "http_status": None,
+                "error_body_snippet": str(e)[:500],
+                "credentials_present": True,
+            },
+        )
+
+    redacted = _redact_url_query(response.url)
+    print(f"Adzuna request URL (redacted): {redacted}")
+
+    status = response.status_code
+    body_preview = ""
+    try:
+        body_preview = response.text[:800] if response.text else ""
+    except Exception:
+        pass
+
+    print(f"Adzuna HTTP status code: {status}")
+
+    if status != 200:
+        snippet = body_preview.replace("\n", " ").strip()
+        print(f"Adzuna error response (first 600 chars): {snippet[:600]}")
+        print("Fallback dataset activated")
+        return _fallback_payload(
+            reason=f"http_{status}",
+            debug_extra={
+                "request_url_redacted": redacted,
+                "http_status": status,
+                "error_body_snippet": snippet[:500],
+                "credentials_present": True,
+            },
+        )
+
+    try:
+        data = response.json()
+    except ValueError as e:
+        print(f"Adzuna response not valid JSON: {e}")
+        print(f"Raw body preview: {body_preview[:400]}")
+        print("Fallback dataset activated")
+        return _fallback_payload(
+            reason="invalid_json",
+            debug_extra={
+                "request_url_redacted": redacted,
+                "http_status": status,
+                "error_body_snippet": body_preview[:500],
+                "credentials_present": True,
+            },
+        )
+
+    raw_results = data.get("results")
+    if raw_results is None:
+        raw_results = []
+    n_raw = len(raw_results)
+    print(f"Adzuna jobs returned (raw count): {n_raw}")
+
+    jobs = []
+    for job in raw_results:
+        jobs.append({
+            "job_id": str(job.get("id", "")),
+            "title": job.get("title", ""),
+            "company": job.get("company", {}).get("display_name", "Unknown"),
+            "location": job.get("location", {}).get("display_name", location),
+            "description": job.get("description", ""),
+            "url": job.get("redirect_url", ""),
+            "salary_min": job.get("salary_min", 0),
+            "salary_max": job.get("salary_max", 0),
+            "skills": [],
+        })
+
+    count = len(jobs)
+    dbg = _build_debug(
+        source="adzuna",
+        request_url_redacted=redacted,
+        http_status=status,
+        adzuna_result_count=n_raw,
+        fallback_reason=None,
+        credentials_present=True,
+    )
+    print("LIVE Adzuna jobs loaded")
+    print(f"  Parsed job count: {count}")
+    return {
+        "jobs": jobs,
+        "source": "adzuna",
+        "count": count,
+        "debug": dbg,
+    }
 
 
 def _load_static_jobs() -> list:
@@ -102,13 +221,22 @@ def _load_static_jobs() -> list:
         return []
 
 
-def _fallback_payload(reason: str = "") -> dict:
+def _fallback_payload(reason: str = "", debug_extra: dict | None = None) -> dict:
     jobs = _load_static_jobs()
     count = len(jobs)
     if reason:
         print(f"Fallback reason: {reason}")
-    print(f"Using FALLBACK static dataset — {count} job(s)")
-    return {"jobs": jobs, "source": "fallback", "count": count}
+    extra = debug_extra or {}
+    dbg = _build_debug(
+        source="fallback",
+        request_url_redacted=extra.get("request_url_redacted"),
+        http_status=extra.get("http_status"),
+        adzuna_raw_result_count=extra.get("adzuna_raw_result_count"),
+        fallback_reason=reason or "unknown",
+        error_body_snippet=extra.get("error_body_snippet"),
+        credentials_present=extra.get("credentials_present", False),
+    )
+    return {"jobs": jobs, "source": "fallback", "count": count, "debug": dbg}
 
 
 def get_job_description(job: dict) -> str:

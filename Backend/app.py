@@ -57,7 +57,14 @@ def learning_path_route():
     payload = request.get_json(silent=True) or {}
     missing_skills = payload.get("missing_skills", [])
     target_role = payload.get("target_role", "")
-    return jsonify(generate_learning_path(missing_skills, target_role))
+    demand_context = payload.get("demand_context")
+    return jsonify(
+        generate_learning_path(
+            missing_skills,
+            target_role,
+            demand_context=demand_context if isinstance(demand_context, dict) else None,
+        )
+    )
 
 
 @app.post("/api/market-analysis")
@@ -84,11 +91,14 @@ def fetch_jobs_route():
     keywords = payload.get("keywords", "")
     location = payload.get("location", "india")
     result = fetch_jobs(keywords, location)
-    return jsonify({
+    out = {
         "jobs": result["jobs"],
         "count": result["count"],
         "source": result["source"],
-    })
+    }
+    if result.get("debug"):
+        out["debug"] = result["debug"]
+    return jsonify(out)
 
 
 @app.get("/api/locations")

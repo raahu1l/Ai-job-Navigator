@@ -59,18 +59,22 @@ export function normalizeMarketAnalysis(raw) {
 export function normalizeLearningPath(raw) {
   const d = raw && typeof raw === "object" ? raw : {};
   const steps = Array.isArray(d.steps) ? d.steps : [];
-  const safeSteps =
-    steps.length > 0
-      ? steps.map((s, i) => ({
-          skill: s?.skill || `Step ${i + 1}`,
-          resource: s?.resource || "See course docs and community guides",
-          time: s?.time || "1 week",
-        }))
-      : DEFAULT_LEARNING_PATH.steps;
+  const safeSteps = steps.map((s, i) => ({
+    skill: s?.skill || `Step ${i + 1}`,
+    guidance: typeof s?.guidance === "string" ? s.guidance : "",
+    resource: typeof s?.resource === "string" ? s.resource : "",
+    platform: typeof s?.platform === "string" ? s.platform : "",
+    time: typeof s?.time === "string" ? s.time : "1 week",
+  }));
+  const missingList = Array.isArray(d.missing_skills_for_role)
+    ? d.missing_skills_for_role.filter((x) => typeof x === "string" && x.trim())
+    : [];
   return {
-    priority_skill: d.priority_skill || DEFAULT_LEARNING_PATH.priority_skill,
-    estimated_time: d.estimated_time || DEFAULT_LEARNING_PATH.estimated_time,
-    message: d.message || DEFAULT_LEARNING_PATH.message,
+    missing_skills_for_role: missingList,
+    demand_insight: typeof d.demand_insight === "string" ? d.demand_insight.trim() : "",
+    priority_skill: typeof d.priority_skill === "string" ? d.priority_skill : "",
+    estimated_time: typeof d.estimated_time === "string" ? d.estimated_time : "",
+    message: typeof d.message === "string" ? d.message : "",
     steps: safeSteps,
   };
 }

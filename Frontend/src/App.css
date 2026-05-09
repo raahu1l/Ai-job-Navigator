@@ -310,9 +310,102 @@
   color: var(--text-primary);
   font-weight: 600;
 }
+.stats-bar__debug {
+  width: 100%;
+  flex-basis: 100%;
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+.stats-bar__debug summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent);
+}
+.stats-bar__debug-pre {
+  margin-top: 0.35rem;
+  padding: 0.45rem 0.5rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  font-size: 0.65rem;
+  line-height: 1.35;
+  max-height: 9rem;
+}
 .stats-bar__sep {
   opacity: 0.45;
   padding: 0 0.1rem;
+}
+
+.job-card__empty-skill {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.lp-subheading {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin-bottom: 0.35rem;
+}
+.lp-missing-block {
+  margin-bottom: 1rem;
+}
+.lp-missing-chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0;
+  margin: 0;
+}
+.lp-missing-chip {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--danger-light);
+  color: var(--danger-text);
+}
+.lp-demand-insight {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.45;
+  padding: 0.65rem 0.75rem;
+  background: var(--accent-light);
+  border-radius: var(--radius-sm);
+  margin-bottom: 1rem;
+  border-left: 3px solid var(--accent);
+}
+.lp-step-guidance {
+  font-size: 0.86rem;
+  color: var(--text-primary);
+  line-height: 1.45;
+  margin: 0.35rem 0 0.25rem;
+}
+.lp-step-platform {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0.35rem 0 0;
+  line-height: 1.4;
+}
+.lp-step-platform-label {
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  margin-right: 0.25rem;
+}
+.lp-steps-empty {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-top: 0.35rem;
 }
 .learning-path-anchor {
   scroll-margin-top: 72px;

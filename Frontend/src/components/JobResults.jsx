@@ -67,12 +67,12 @@ function JobResults({ results, onGetLearningPath }) {
                       </span>
                     ))
                   ) : (
-                    <span className="pill pill--muted">Add aligned skills to improve match</span>
+                    <span className="job-card__empty-skill">—</span>
                   )}
                 </div>
               </section>
               <section className="job-card__skill-block">
-                <p className="skills-label missing">Gaps / next</p>
+                <p className="skills-label missing">Missing skills</p>
                 <div className="pills">
                   {missing.length > 0 ? (
                     missing.map((skill, skillIndex) => (
@@ -84,7 +84,7 @@ function JobResults({ results, onGetLearningPath }) {
                       </span>
                     ))
                   ) : (
-                    <span className="pill pill--muted">See full listing for details</span>
+                    <span className="job-card__empty-skill">—</span>
                   )}
                 </div>
               </section>

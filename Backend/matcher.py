@@ -189,7 +189,7 @@ def get_trending(top_n: int = 15, user_skills: list | None = None) -> list:
         return trending
 
     # No whitelist hits — try raw static JSON titles/descriptions only (no Kaggle categories)
-    print("Trending: enriching from local static titles (no whitelist hits so far)")
+    print("Trending: Fallback dataset activated (local JSON titles for whitelist enrichment)")
     trending = trending_from_jobs(JOBS, top_n=top_n * 2)
     trending = prioritize_trending_for_domain(trending, domain, top_n)
     trending = filter_trending_results(trending)

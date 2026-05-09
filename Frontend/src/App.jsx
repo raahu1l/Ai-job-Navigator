@@ -10,7 +10,6 @@ import {
   DEFAULT_MARKET_ANALYSIS,
   FALLBACK_TRENDING_CHART,
   normalizeMarketAnalysis,
-  normalizeLearningPath,
   buildFallbackResultsFromJobs,
   buildMinimalPlaceholderResults,
   isExploratoryResults,
@@ -33,7 +32,11 @@ function App() {
   const [roadmapVisible, setRoadmapVisible] = useState(false);
   const [roadmapTargetLabel, setRoadmapTargetLabel] = useState("");
   const [roadmapError, setRoadmapError] = useState(null);
-  const [jobFetchMeta, setJobFetchMeta] = useState({ count: 0, source: null });
+  const [jobFetchMeta, setJobFetchMeta] = useState({
+    count: 0,
+    source: null,
+    debug: null,
+  });
   const [showResultsSection, setShowResultsSection] = useState(false);
   const [trendingSkillsQuery, setTrendingSkillsQuery] = useState("");
   const resultsGridRef = useRef(null);
@@ -120,6 +123,9 @@ function App() {
       setJobFetchMeta({
         count: typeof fetchJobsData?.count === "number" ? fetchJobsData.count : jobs.length,
         source: fetchJobsData?.source ?? null,
+        debug: fetchJobsData?.debug && typeof fetchJobsData.debug === "object"
+          ? fetchJobsData.debug
+          : null,
       });
       setActiveAgent(1);
       await sleep(800);
@@ -204,7 +210,7 @@ function App() {
       setMarketAnalysis({ ...DEFAULT_MARKET_ANALYSIS });
       setRoadmapVisible(false);
       setLearningPath(null);
-      setJobFetchMeta({ count: 0, source: null });
+      setJobFetchMeta({ count: 0, source: null, debug: null });
       setLoadingPhase(null);
       window.setTimeout(() => {
         resultsGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -223,7 +229,7 @@ function App() {
     setRoadmapVisible(false);
     setRoadmapTargetLabel("");
     setRoadmapError(null);
-    setJobFetchMeta({ count: 0, source: null });
+    setJobFetchMeta({ count: 0, source: null, debug: null });
     setActiveAgent(-1);
     setIsLoading(false);
     setLoadingPhase(null);
@@ -232,17 +238,20 @@ function App() {
     setError("");
   };
 
-  const handleGetLearningPath = async (job) => {
+  const handleGetLearningPath = async (job, rolesInCurrentSet = 0) => {
     const title = job?.title || "Role";
     const company = job?.company || "Employer";
+    const missing = Array.isArray(job?.missing_skills) ? job.missing_skills : [];
     setRoadmapVisible(true);
     setRoadmapTargetLabel(`${title} · ${company}`);
     setRoadmapError(null);
     setLearningPath(null);
     setError("");
     setLoadingPhase("roadmap");
+    window.setTimeout(() => {
+      learningPathRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
     try {
-      const missing = Array.isArray(job?.missing_skills) ? job.missing_skills : [];
       const response = await fetch(`${API_BASE}/api/learning-path`, {
         method: "POST",
         headers: {
@@ -251,6 +260,11 @@ function App() {
         body: JSON.stringify({
           missing_skills: missing.length ? missing : ["Core skills"],
           target_role: title,
+          demand_context: {
+            roles_in_current_set: rolesInCurrentSet,
+            match_score_percent: Math.round(Number(job?.match_score) || 0),
+            top_missing_skill: missing[0] || "",
+          },
         }),
       });
 
@@ -259,10 +273,10 @@ function App() {
       }
 
       const data = await response.json();
-      setLearningPath(normalizeLearningPath(data));
+      setLearningPath(data);
       window.setTimeout(() => {
         learningPathRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 80);
+      }, 120);
     } catch (err) {
       setRoadmapError(err.message || "Something went wrong");
       setLearningPath(null);
@@ -353,7 +367,9 @@ function App() {
                 </div>
               )}
 
-              {(jobFetchMeta.source || jobFetchMeta.count > 0) && (
+              {(jobFetchMeta.source != null ||
+                jobFetchMeta.count > 0 ||
+                jobFetchMeta.debug) && (
                 <div className="stats-bar stats-bar--minimal" role="status">
                   <span>
                     <strong>{jobFetchMeta.count}</strong> job{jobFetchMeta.count === 1 ? "" : "s"}{" "}
@@ -378,6 +394,14 @@ function App() {
                       </span>
                     </>
                   )}
+                  {jobFetchMeta.debug && (
+                    <details className="stats-bar__debug">
+                      <summary>Fetch debug</summary>
+                      <pre className="stats-bar__debug-pre">
+                        {JSON.stringify(jobFetchMeta.debug, null, 2)}
+                      </pre>
+                    </details>
+                  )}
                 </div>
               )}
 
@@ -385,7 +409,9 @@ function App() {
                 <div className="jobs-column">
                   <JobResults
                     results={results}
-                    onGetLearningPath={handleGetLearningPath}
+                    onGetLearningPath={(job) =>
+                      handleGetLearningPath(job, results.length)
+                    }
                   />
                 </div>
               )}

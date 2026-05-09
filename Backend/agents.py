@@ -13,14 +13,21 @@ from skill_filters import filter_skill_list
 
 
 def _sanitize_learning_path_payload(data: dict) -> dict:
-    """Strip generic labels from LLM learning-path skills."""
+    """Strip generic labels from LLM learning-path skills; keep roadmap-only fields."""
     if not isinstance(data, dict):
         return data
     out = dict(data)
+    ms = out.get("missing_skills_for_role")
+    if isinstance(ms, list):
+        out["missing_skills_for_role"] = filter_skill_list(
+            [str(x) for x in ms if isinstance(x, str)]
+        )
     ps = out.get("priority_skill")
     if isinstance(ps, str):
         kept = filter_skill_list([ps])
         out["priority_skill"] = kept[0] if kept else ""
+    if out.get("demand_insight") is not None and not isinstance(out.get("demand_insight"), str):
+        out["demand_insight"] = str(out["demand_insight"])
     steps = out.get("steps")
     if not isinstance(steps, list):
         return out
@@ -34,7 +41,11 @@ def _sanitize_learning_path_payload(data: dict) -> dict:
         kept = filter_skill_list([sk])
         if not kept:
             continue
-        new_steps.append({**step, "skill": kept[0]})
+        row = {**step, "skill": kept[0]}
+        for key in ("guidance", "resource", "platform", "time"):
+            if key in row and row[key] is not None and not isinstance(row[key], str):
+                row[key] = str(row[key])
+        new_steps.append(row)
     out["steps"] = new_steps
     return out
 
@@ -83,46 +94,97 @@ Job Description:
     except:
         return []
 
-def generate_learning_path(missing_skills: list, target_role: str) -> dict:
+def generate_learning_path(
+    missing_skills: list,
+    target_role: str,
+    demand_context: dict | None = None,
+) -> dict:
     missing_skills = filter_skill_list(missing_skills if isinstance(missing_skills, list) else [])
     if not missing_skills:
-        return {"message": "You have all required skills!", "steps": []}
-    
+        return {
+            "message": "No skill gaps listed for this role.",
+            "missing_skills_for_role": [],
+            "demand_insight": "",
+            "steps": [],
+        }
+
+    ctx = demand_context if isinstance(demand_context, dict) else {}
+    ctx_bits = []
+    if ctx.get("roles_in_current_set") is not None:
+        ctx_bits.append(f"Roles in current search results: {ctx.get('roles_in_current_set')}")
+    if ctx.get("match_score_percent") is not None:
+        ctx_bits.append(f"Match score for this posting: {ctx.get('match_score_percent')}%")
+    if ctx.get("top_missing_skill") is not None:
+        ctx_bits.append(f"Strongest gap to highlight: {ctx.get('top_missing_skill')}")
+    ctx_line = "\n".join(ctx_bits) if ctx_bits else "(no extra metrics)"
+
     prompt = f"""
-You are a career coach. Given these missing skills for a {target_role} role,
-create a prioritized learning path.
-Return ONLY a JSON object with no explanation, no markdown.
-Format exactly like this:
+You are a career coach building a ROLE-SPECIFIC learning roadmap (not generic advice).
+Missing skills apply ONLY to this target role.
+
+Return ONLY valid JSON — no markdown, no commentary.
+
+Schema:
 {{
-  "priority_skill": "most important skill to learn first",
-  "estimated_time": "X weeks",
+  "missing_skills_for_role": [ "same actionable skills from input, ordered by impact" ],
+  "demand_insight": "One concrete line like: Learning [skill] could unlock roughly X% more similar roles — use plausible X based on gaps vs role (e.g. 25-45%).",
+  "priority_skill": "single skill to learn first",
+  "estimated_time": "total weeks range e.g. 4-8 weeks",
+  "message": "One short motivational line tying effort to interviews",
   "steps": [
-    {{"skill": "skill name", "resource": "best free resource", "time": "X weeks"}},
-    {{"skill": "skill name", "resource": "best free resource", "time": "X weeks"}}
-  ],
-  "message": "encouraging one line message"
+    {{
+      "skill": "skill name",
+      "guidance": "2-3 sentences: what to learn and in what order",
+      "resource": "Specific course, doc path, or practice project",
+      "platform": "e.g. freeCodeCamp, Coursera, official docs, YouTube channel name",
+      "time": "e.g. 1-2 weeks"
+    }}
+  ]
 }}
 
+Rules:
+- steps must cover the main missing_skills (one step per major skill or combine closely related).
+- resources must name real platforms or official documentation styles (no vague "online course").
+- demand_insight must reference at least one missing skill and a percent or fraction.
+
+Target role title: {target_role}
 Missing skills: {missing_skills}
-Target role: {target_role}
+
+Context for demand line (use if helpful):
+{ctx_line}
 """
     response = client.chat.completions.create(
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
-        max_tokens=800
+        max_tokens=1200,
     )
-    
+
     text = extract_json(response.choices[0].message.content)
     try:
         text = text.replace("```json", "").replace("```", "").strip()
-        return _sanitize_learning_path_payload(json.loads(text))
-    except:
+        parsed = json.loads(text)
+        out = _sanitize_learning_path_payload(parsed)
+        if not out.get("missing_skills_for_role"):
+            out["missing_skills_for_role"] = list(missing_skills)
+        return out
+    except Exception:
+        top = missing_skills[0]
+        n_roles = ctx.get("roles_in_current_set")
+        insight = (
+            f"Prioritizing {top} for this role typically widens your fit for similar postings."
+        )
+        if isinstance(n_roles, int) and n_roles > 0:
+            insight = (
+                f"In this set of {n_roles} roles, closing gaps on {top} is the fastest way to raise match quality."
+            )
         return {
-            "priority_skill": missing_skills[0] if missing_skills else "",
-            "estimated_time": "4 weeks",
+            "missing_skills_for_role": missing_skills,
+            "demand_insight": insight,
+            "priority_skill": top,
+            "estimated_time": "4-6 weeks",
             "steps": [],
-            "message": "Focus on one skill at a time."
+            "message": "Could not parse AI roadmap — retry or shorten skills list.",
         }
 
 def analyze_market_demand(trending_skills: list, user_skills: list) -> dict:
