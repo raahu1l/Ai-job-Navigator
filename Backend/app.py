@@ -3,6 +3,7 @@ from flask_cors import CORS
 from matcher import analyze, get_trending
 from agents import extract_skills_from_jd, generate_learning_path, analyze_market_demand
 from crew import SkillNavCrew
+from job_fetcher import fetch_jobs
 
 app = Flask(__name__)
 CORS(app)
@@ -57,6 +58,24 @@ def crew_run_route():
     trending_skills = payload.get("trending_skills", [])
     crew = SkillNavCrew()
     return jsonify(crew.run(user_skills, job_results, trending_skills))
+
+
+@app.post("/api/fetch-jobs")
+def fetch_jobs_route():
+    payload = request.get_json(silent=True) or {}
+    keywords = payload.get("keywords", "")
+    location = payload.get("location", "india")
+    jobs = fetch_jobs(keywords, location)
+    return jsonify({"jobs": jobs, "count": len(jobs), "source": "adzuna"})
+
+
+@app.get("/api/locations")
+def locations_route():
+    return jsonify({
+        "locations": ["India", "Bangalore", "Mumbai", "Delhi",
+                      "Hyderabad", "Pune", "Chennai", "USA", "UK",
+                      "Canada", "Australia", "Remote"]
+    })
 
 
 if __name__ == "__main__":
