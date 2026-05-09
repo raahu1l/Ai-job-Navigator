@@ -4,3 +4,4 @@ pandas
 gunicorn
 python-dotenv
 groq
+requests
