@@ -19,10 +19,11 @@ COUNTRY_CODES = {
 }
 
 
-def fetch_jobs(keywords: str, location: str = "india", results: int = 20) -> list:
+def fetch_jobs(keywords: str, location: str = "india", results: int = 20) -> dict:
     """
     Fetch live jobs from Adzuna API.
-    Falls back to static jobs.json if API fails.
+    Falls back to static jobs.json only if the API request fails, returns an error
+    status, rate-limits, or yields no job results.
     """
     try:
         country = COUNTRY_CODES.get(location.lower(), "in")
@@ -42,13 +43,24 @@ def fetch_jobs(keywords: str, location: str = "india", results: int = 20) -> lis
         response = req.get(url, params=params, timeout=10)
 
         if response.status_code != 200:
-            print(f"Adzuna API error: {response.status_code}")
-            return _fallback_jobs()
+            print(f"Adzuna API error: HTTP {response.status_code}")
+            if response.status_code == 429:
+                print("Adzuna rate limit (429) — using fallback")
+            return _fallback_payload(reason=f"http_{response.status_code}")
 
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError as e:
+            print(f"Adzuna response not valid JSON: {e}")
+            return _fallback_payload(reason="invalid_json")
+
+        raw_results = data.get("results")
+        if not raw_results:
+            print("Adzuna returned empty results — using fallback")
+            return _fallback_payload(reason="empty_response")
+
         jobs = []
-
-        for job in data.get("results", []):
+        for job in raw_results:
             jobs.append({
                 "job_id": str(job.get("id", "")),
                 "title": job.get("title", ""),
@@ -62,29 +74,41 @@ def fetch_jobs(keywords: str, location: str = "india", results: int = 20) -> lis
             })
 
         if not jobs:
-            return _fallback_jobs()
+            print("Adzuna parsed zero jobs — using fallback")
+            return _fallback_payload(reason="empty_after_parse")
 
-        return jobs
+        count = len(jobs)
+        print(f"Using LIVE Adzuna jobs — {count} jobs fetched")
+        return {"jobs": jobs, "source": "adzuna", "count": count}
 
+    except req.RequestException as e:
+        print(f"Adzuna fetch error (network): {e}")
+        return _fallback_payload(reason="request_failed")
     except Exception as e:
         print(f"Adzuna fetch error: {e}")
-        return _fallback_jobs()
+        return _fallback_payload(reason="error")
 
 
-def _fallback_jobs() -> list:
-    """Return static jobs.json as fallback"""
+def _load_static_jobs() -> list:
     import json
     from pathlib import Path
 
     try:
         data_path = Path(__file__).resolve().parent / "data" / "jobs.json"
         with open(data_path, "r", encoding="utf-8") as f:
-            jobs = json.load(f)
-        print("Using fallback static dataset")
-        return jobs
+            return json.load(f)
     except Exception as e:
         print(f"Fallback also failed: {e}")
         return []
+
+
+def _fallback_payload(reason: str = "") -> dict:
+    jobs = _load_static_jobs()
+    count = len(jobs)
+    if reason:
+        print(f"Fallback reason: {reason}")
+    print(f"Using FALLBACK static dataset — {count} jobs")
+    return {"jobs": jobs, "source": "fallback", "count": count}
 
 
 def get_job_description(job: dict) -> str:

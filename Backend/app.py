@@ -74,8 +74,12 @@ def fetch_jobs_route():
     payload = request.get_json(silent=True) or {}
     keywords = payload.get("keywords", "")
     location = payload.get("location", "india")
-    jobs = fetch_jobs(keywords, location)
-    return jsonify({"jobs": jobs, "count": len(jobs), "source": "adzuna"})
+    result = fetch_jobs(keywords, location)
+    return jsonify({
+        "jobs": result["jobs"],
+        "count": result["count"],
+        "source": result["source"],
+    })
 
 
 @app.get("/api/locations")

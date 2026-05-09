@@ -27,9 +27,7 @@ function App() {
     { icon: "🎯", label: "Career Coach" },
   ];
 
-  const wait = (ms) => new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   useEffect(() => {
     const fetchTrending = async () => {
@@ -56,7 +54,7 @@ function App() {
       setError("");
       setIsLoading(true);
       setActiveAgent(0);
-      await wait(250);
+      await sleep(800);
 
       const fetchJobsResponse = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/fetch-jobs", {
         method: "POST",
@@ -77,7 +75,7 @@ function App() {
       const jobs = Array.isArray(fetchJobsData?.jobs) ? fetchJobsData.jobs : [];
       setLiveJobs(jobs);
       setActiveAgent(1);
-      await wait(250);
+      await sleep(800);
 
       const response = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/analyze", {
         method: "POST",
@@ -96,7 +94,7 @@ function App() {
       setResults(nextResults);
       setLearningPath(null);
       setActiveAgent(2);
-      await wait(250);
+      await sleep(800);
 
       const topTrendingSkills = trending
         .slice(0, 5)
@@ -127,7 +125,7 @@ function App() {
         setMarketAnalysis(null);
       }
       setActiveAgent(3);
-      await wait(300);
+      await sleep(800);
       setActiveAgent(4);
 
       if (nextResults.length > 0) {
@@ -159,6 +157,7 @@ function App() {
     setMarketAnalysis(null);
     setLearningPath(null);
     setActiveAgent(-1);
+    setIsLoading(false);
   };
 
   const handleGetLearningPath = async (job) => {
@@ -266,77 +265,81 @@ function App() {
           {error && <p>{error}</p>}
         </div>
 
-        <div className="chart-card">
-          <TrendChart trending={trending} />
-        </div>
-
-        {results.length > 0 && (
-          <div className="stats-bar">
-            <div className="stat-item">
-              <span className="stat-number">500</span>
-              <span className="stat-label">Jobs Analyzed</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-number">{results.length}</span>
-              <span className="stat-label">Roles You Match</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-number">{uniqueMissingCount}</span>
-              <span className="stat-label">Skills to Learn</span>
-            </div>
-          </div>
-        )}
-
-        {marketAnalysis && <MarketAnalysis analysis={marketAnalysis} />}
-
-        {results.length > 0 && (
-          <div className="top-roles-bar">
-            <span className="top-roles-label">
-              You're best suited for:
-            </span>
-            {top3Titles.map((title) => (
-              <span className="role-tag" key={title}>{title}</span>
-            ))}
-          </div>
-        )}
-
-        <section className="pipeline-card">
-          <div className="pipeline-title">AI Agent Pipeline</div>
-          <div className="pipeline-row">
-            {pipelineAgents.map((agent, index) => {
-              let state = "idle";
-              if (activeAgent === 4 || activeAgent > index) {
-                state = "completed";
-              } else if (activeAgent === index) {
-                state = "active";
-              }
-
-              return (
-                <div className="pipeline-item-wrap" key={agent.label}>
-                  <div className={`pipeline-agent pipeline-agent--${state}`}>
-                    <span className="pipeline-icon">{state === "completed" ? "✓" : agent.icon}</span>
-                    <span className="pipeline-label">{agent.label}</span>
-                  </div>
-                  {index < pipelineAgents.length - 1 && <div className="pipeline-connector" />}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {results.length > 0 && (
+        {(isLoading || results.length > 0) && (
           <div
             ref={resultsGridRef}
-            className={`results-grid ${isResultsHighlighted ? "results-grid--highlight" : ""}`}
+            className={`results-section ${isResultsHighlighted ? "results-section--highlight" : ""}`}
           >
-            <SkillGap results={results} className="gap-card" />
-            <div className="jobs-column">
-              <JobResults results={results} onGetLearningPath={handleGetLearningPath} />
-            </div>
+            <section className="pipeline-card pipeline-card--sticky">
+              <div className="pipeline-title">AI Agent Pipeline</div>
+              <div className="pipeline-row">
+                {pipelineAgents.map((agent, index) => {
+                  let state = "idle";
+                  if (activeAgent === 4 || activeAgent > index) {
+                    state = "completed";
+                  } else if (activeAgent === index) {
+                    state = "active";
+                  }
+
+                  return (
+                    <div className="pipeline-item-wrap" key={agent.label}>
+                      <div className={`pipeline-agent pipeline-agent--${state}`}>
+                        <span className="pipeline-icon">{state === "completed" ? "✓" : agent.icon}</span>
+                        <span className="pipeline-label">{agent.label}</span>
+                      </div>
+                      {index < pipelineAgents.length - 1 && <div className="pipeline-connector" />}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            {results.length > 0 && (
+              <>
+                <div className="stats-bar">
+                  <div className="stat-item">
+                    <span className="stat-number">500</span>
+                    <span className="stat-label">Jobs Analyzed</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-number">{results.length}</span>
+                    <span className="stat-label">Roles You Match</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-number">{uniqueMissingCount}</span>
+                    <span className="stat-label">Skills to Learn</span>
+                  </div>
+                </div>
+
+                <div className="top-roles-bar">
+                  <span className="top-roles-label">
+                    You're best suited for:
+                  </span>
+                  {top3Titles.map((title) => (
+                    <span className="role-tag" key={title}>{title}</span>
+                  ))}
+                </div>
+
+                <div className="results-grid results-grid--jobs-first">
+                  <div className="jobs-column">
+                    <JobResults results={results} onGetLearningPath={handleGetLearningPath} />
+                  </div>
+                  <SkillGap results={results} className="gap-card" />
+                </div>
+              </>
+            )}
+
+            {marketAnalysis && <MarketAnalysis analysis={marketAnalysis} />}
+
+            {results.length > 0 && (
+              <div className="chart-card chart-card--in-results">
+                <TrendChart trending={trending} />
+              </div>
+            )}
+
+            {learningPath && <LearningPath learningPath={learningPath} />}
           </div>
         )}
-
-        {learningPath && <LearningPath learningPath={learningPath} />}
       </main>
 
       <footer className="footer">
