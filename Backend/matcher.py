@@ -8,7 +8,12 @@ from skill_domain import (
     domain_job_search_query,
     prioritize_trending_for_domain,
 )
-from skill_filters import filter_skill_list, filter_trending_results, is_blocked_skill
+from skill_filters import (
+    filter_skill_list,
+    filter_trending_results,
+    is_blocked_skill,
+    normalize_skill_key,
+)
 from technical_trending import extract_technical_skills_from_job, trending_from_jobs
 
 
@@ -17,18 +22,42 @@ DATA_PATH = Path(__file__).resolve().parent / "data" / "jobs.json"
 with DATA_PATH.open("r", encoding="utf-8") as f:
     JOBS = json.load(f)
 
+# Normalized synonyms: if user lists any variant, match any required skill in same group.
+_USER_SKILL_ALIAS_GROUPS: tuple[frozenset[str], ...] = (
+    frozenset({"microsoft excel", "excel"}),
+    frozenset({"google cloud", "gcp"}),
+    frozenset({"javascript", "js"}),
+    frozenset({"typescript", "ts"}),
+    frozenset({"aws", "amazon web services"}),
+    frozenset({"kubernetes", "k8s"}),
+    frozenset({"machine learning", "ml"}),
+    frozenset({"artificial intelligence", "ai"}),
+)
+
+
+def expand_user_skill_match_keys(user_skills: list) -> set[str]:
+    """Lowercase-normalized skill keys plus alias expansion for equitable matching."""
+    base = {normalize_skill_key(str(s)) for s in user_skills if str(s).strip()}
+    base.discard("")
+    out = set(base)
+    for group in _USER_SKILL_ALIAS_GROUPS:
+        if base & group:
+            out |= group
+    return out
+
 
 def _sanitize_job_result(row: dict) -> dict:
     """Apply global skill filter + dedupe to API job rows."""
     return {
         **row,
+        "required_skills": filter_skill_list(row.get("required_skills")),
         "matched_skills": filter_skill_list(row.get("matched_skills")),
         "missing_skills": filter_skill_list(row.get("missing_skills")),
     }
 
 
-def _skills_from_live_job(job: dict) -> list[str]:
-    """Skills for scoring: whitelist tech from title/description plus any API-provided tags."""
+def _required_skills_from_job(job: dict) -> list[str]:
+    """Extract required skills from title + description (whitelist) plus API tags; may be empty."""
     found = extract_technical_skills_from_job(job)
     for s in job.get("skills") or []:
         if isinstance(s, str) and s.strip():
@@ -49,32 +78,40 @@ def _skills_from_live_job(job: dict) -> list[str]:
         out.append(w)
         if len(out) >= 8:
             break
-    raw = out if out else ["Role-specific requirements"]
-    return filter_skill_list(raw) or ["Role-specific requirements"]
+    return filter_skill_list(out)
 
 
-def _analyze_live_jobs(user_skill_set: set[str], job_results: list) -> list:
+def _analyze_live_jobs(user_skill_keys: set[str], job_results: list) -> list:
     results = []
     for job in job_results[:50]:
-        display_skills = _skills_from_live_job(job)
+        required_skills = _required_skills_from_job(job)
         matched_skills: list[str] = []
         missing_skills: list[str] = []
-        for disp in display_skills:
-            n = disp.lower().strip()
-            if n in user_skill_set:
-                matched_skills.append(disp)
+
+        if not required_skills:
+            match_score = 0.0
+        else:
+            for disp in required_skills:
+                need = normalize_skill_key(disp)
+                if need in user_skill_keys:
+                    matched_skills.append(disp)
+                else:
+                    missing_skills.append(disp)
+
+            total_req = len(matched_skills) + len(missing_skills)
+            if missing_skills:
+                match_score = round((len(matched_skills) / total_req) * 100, 2) if total_req else 0.0
             else:
-                missing_skills.append(disp)
-        matched_skills = filter_skill_list(matched_skills)
-        missing_skills = filter_skill_list(missing_skills)
-        total = max(len(matched_skills) + len(missing_skills), 1)
-        match_score = round((len(matched_skills) / total) * 100, 2)
+                # 100% only when nothing is missing vs extracted requirements.
+                match_score = 100.0
+
         results.append(
             {
                 "job_id": str(job.get("job_id", "")),
                 "title": str(job.get("title") or "Role"),
                 "company": str(job.get("company") or "Unknown"),
                 "match_score": match_score,
+                "required_skills": required_skills,
                 "matched_skills": matched_skills,
                 "missing_skills": missing_skills,
             }
@@ -84,8 +121,8 @@ def _analyze_live_jobs(user_skill_set: set[str], job_results: list) -> list:
 
 
 def analyze(user_skills: list, job_results: list | None = None) -> list:
-    user_skill_set = {str(skill).strip().lower() for skill in user_skills if str(skill).strip()}
-    if not user_skill_set:
+    user_skill_keys = expand_user_skill_match_keys(user_skills if isinstance(user_skills, list) else [])
+    if not user_skill_keys:
         return []
 
     # Live payloads from Adzuna (or upstream) must never fall through to static Kaggle categories.
@@ -93,7 +130,7 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
         n = len(job_results)
         print("Using LIVE Adzuna analysis")
         print(f"  (live job_results: {n})")
-        return _analyze_live_jobs(user_skill_set, job_results)
+        return _analyze_live_jobs(user_skill_keys, job_results)
 
     print("Using FALLBACK static dataset")
     results = []
@@ -104,12 +141,14 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
         if total_job_skills == 0:
             continue
 
-        matched_skills = []
-        missing_skills = []
+        required_skills = filter_skill_list(
+            [str(skill).strip() for skill in job_skills if str(skill).strip()]
+        )
+        matched_skills: list[str] = []
+        missing_skills: list[str] = []
 
-        for skill in job_skills:
-            normalized_skill = str(skill).strip().lower()
-            if normalized_skill in user_skill_set:
+        for skill in required_skills:
+            if normalize_skill_key(skill) in user_skill_keys:
                 matched_skills.append(skill)
             else:
                 missing_skills.append(skill)
@@ -119,9 +158,11 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
         total_effective = len(matched_skills) + len(missing_skills)
         if total_effective == 0:
             continue
-        matched_count = len(matched_skills)
-        match_score = (matched_count / total_effective) * 100
-        if match_score == 0:
+        if missing_skills:
+            match_score = round((len(matched_skills) / total_effective) * 100, 2)
+        else:
+            match_score = 100.0
+        if missing_skills and match_score == 0:
             continue
 
         results.append(
@@ -129,7 +170,8 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
                 "job_id": str(job.get("job_id", "")),
                 "title": job.get("title", ""),
                 "company": job.get("company", ""),
-                "match_score": round(match_score, 2),
+                "match_score": match_score,
+                "required_skills": required_skills,
                 "matched_skills": matched_skills,
                 "missing_skills": missing_skills,
             }
@@ -153,6 +195,7 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
                     "title": job.get("title", ""),
                     "company": job.get("company", ""),
                     "match_score": 0.0,
+                    "required_skills": job_skills,
                     "matched_skills": [],
                     "missing_skills": job_skills,
                 }

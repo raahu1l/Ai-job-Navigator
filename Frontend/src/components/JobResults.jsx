@@ -1,3 +1,21 @@
+function mergeRequiredSkills(job, matched, missing) {
+  const fromApi = Array.isArray(job.required_skills) ? job.required_skills : [];
+  if (fromApi.length > 0) {
+    return fromApi;
+  }
+  const seen = new Set();
+  const out = [];
+  for (const x of [...matched, ...missing]) {
+    const k = String(x).trim().toLowerCase();
+    if (!k || seen.has(k)) {
+      continue;
+    }
+    seen.add(k);
+    out.push(x);
+  }
+  return out;
+}
+
 function JobResults({ results, onGetLearningPath }) {
   const getMatchScoreColor = (matchScore) => {
     const n = Number(matchScore) || 0;
@@ -17,6 +35,9 @@ function JobResults({ results, onGetLearningPath }) {
       {safeResults.map((job, index) => {
         const matched = Array.isArray(job.matched_skills) ? job.matched_skills : [];
         const missing = Array.isArray(job.missing_skills) ? job.missing_skills : [];
+        const required = mergeRequiredSkills(job, matched, missing);
+        const hasGaps = missing.length > 0;
+        const hasRequirements = required.length > 0;
         const score = Number(job.match_score) || 0;
         const title = job.title || "Role";
         const company = job.company || "Employer";
@@ -55,6 +76,23 @@ function JobResults({ results, onGetLearningPath }) {
 
             <div className="job-card__sections">
               <section className="job-card__skill-block">
+                <p className="skills-label required">Required skills</p>
+                <div className="pills">
+                  {required.length > 0 ? (
+                    required.map((skill, skillIndex) => (
+                      <span
+                        key={`${title}-required-${skill}-${skillIndex}`}
+                        className="pill pill--neutral"
+                      >
+                        {skill}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="job-card__empty-skill">—</span>
+                  )}
+                </div>
+              </section>
+              <section className="job-card__skill-block">
                 <p className="skills-label matched">Matched</p>
                 <div className="pills">
                   {matched.length > 0 ? (
@@ -90,19 +128,33 @@ function JobResults({ results, onGetLearningPath }) {
               </section>
             </div>
 
-            <button
-              type="button"
-              className="learning-path-btn"
-              onClick={() =>
-                onGetLearningPath({
-                  ...job,
-                  missing_skills: missing,
-                  title,
-                })
-              }
-            >
-              Get learning path
-            </button>
+            {hasGaps ? (
+              <button
+                type="button"
+                className="learning-path-btn"
+                onClick={() =>
+                  onGetLearningPath({
+                    ...job,
+                    missing_skills: missing,
+                    required_skills: required,
+                    title,
+                  })
+                }
+              >
+                Get learning path
+              </button>
+            ) : (
+              hasRequirements && (
+              <p className="job-card__match-well" role="status">
+                You already match this role on the extracted requirements.
+              </p>
+              )
+            )}
+            {!hasRequirements && (
+              <p className="job-card__match-note" role="note">
+                No clear skill list extracted from title/description for this posting.
+              </p>
+            )}
           </article>
         );
       })}

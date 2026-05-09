@@ -56,58 +56,123 @@ export function normalizeMarketAnalysis(raw) {
   };
 }
 
+function normStrList(arr) {
+  if (!Array.isArray(arr)) {
+    return [];
+  }
+  return arr.filter((x) => typeof x === "string" && x.trim());
+}
+
+/** Prefer new roadmap_steps; fall back to legacy steps. */
+function normalizeRoadmapSteps(source) {
+  if (!Array.isArray(source)) {
+    return [];
+  }
+  return source.map((s, i) => {
+    const legacyRes = typeof s?.resource === "string" ? s.resource : "";
+    const resourcesArr = normStrList(s?.resources);
+    const fallbackRes =
+      resourcesArr.length > 0
+        ? resourcesArr
+        : legacyRes
+          ? [legacyRes.trim()]
+          : [];
+    const est =
+      typeof s?.estimated_time === "string"
+        ? s.estimated_time
+        : typeof s?.time === "string"
+          ? s.time
+          : "";
+    return {
+      skill: s?.skill || `Step ${i + 1}`,
+      why_it_matters: typeof s?.why_it_matters === "string" ? s.why_it_matters : "",
+      guidance: typeof s?.guidance === "string" ? s.guidance : "",
+      progression: typeof s?.progression === "string" ? s.progression : "",
+      practice_project:
+        typeof s?.practice_project === "string" ? s.practice_project : "",
+      resources: fallbackRes,
+      youtube_channels: normStrList(s?.youtube_channels),
+      tools_and_apps: normStrList(s?.tools_and_apps),
+      platform: typeof s?.platform === "string" ? s.platform : "",
+      estimated_time: est,
+      time: est,
+    };
+  });
+}
+
 export function normalizeLearningPath(raw) {
   const d = raw && typeof raw === "object" ? raw : {};
-  const steps = Array.isArray(d.steps) ? d.steps : [];
-  const safeSteps = steps.map((s, i) => ({
-    skill: s?.skill || `Step ${i + 1}`,
-    guidance: typeof s?.guidance === "string" ? s.guidance : "",
-    resource: typeof s?.resource === "string" ? s.resource : "",
-    platform: typeof s?.platform === "string" ? s.platform : "",
-    time: typeof s?.time === "string" ? s.time : "1 week",
-  }));
+  const roadmapRaw =
+    Array.isArray(d.roadmap_steps) && d.roadmap_steps.length > 0
+      ? d.roadmap_steps
+      : Array.isArray(d.steps)
+        ? d.steps
+        : [];
+  const safeSteps = normalizeRoadmapSteps(roadmapRaw);
   const missingList = Array.isArray(d.missing_skills_for_role)
     ? d.missing_skills_for_role.filter((x) => typeof x === "string" && x.trim())
     : [];
+  const mdi =
+    typeof d.market_demand_insight === "string"
+      ? d.market_demand_insight.trim()
+      : "";
+  const dsi =
+    typeof d.demand_insight === "string" ? d.demand_insight.trim() : "";
+  const demandLines = normStrList(d.demand_summary_lines);
   return {
     missing_skills_for_role: missingList,
-    demand_insight: typeof d.demand_insight === "string" ? d.demand_insight.trim() : "",
+    demand_insight: dsi || mdi,
+    market_demand_insight: mdi || dsi,
+    demand_summary_lines: demandLines,
+    skill_demand_analytics:
+      d.skill_demand_analytics && typeof d.skill_demand_analytics === "object"
+        ? d.skill_demand_analytics
+        : null,
     priority_skill: typeof d.priority_skill === "string" ? d.priority_skill : "",
     estimated_time: typeof d.estimated_time === "string" ? d.estimated_time : "",
     message: typeof d.message === "string" ? d.message : "",
     steps: safeSteps,
+    roadmap_steps: safeSteps,
   };
 }
 
 export function buildFallbackResultsFromJobs(jobs, userSkills) {
   const skills = Array.isArray(userSkills) ? userSkills : [];
-  return (jobs || []).slice(0, 10).map((job, index) => ({
-    job_id: String(job.job_id ?? job.id ?? index),
-    title: job.title || "Open role",
-    company: job.company || "Employer",
-    match_score: 0,
-    matched_skills: [],
-    missing_skills:
+  return (jobs || []).slice(0, 10).map((job, index) => {
+    const gaps =
       skills.length > 0
         ? [`Align: ${skills[0]}`, "Read full description", "Tailor your CV"]
-        : ["Review posting", "Compare requirements", "Note key tools"],
-  }));
+        : ["Review posting", "Compare requirements", "Note key tools"];
+    return {
+      job_id: String(job.job_id ?? job.id ?? index),
+      title: job.title || "Open role",
+      company: job.company || "Employer",
+      match_score: 0,
+      required_skills: gaps,
+      matched_skills: [],
+      missing_skills: gaps,
+    };
+  });
 }
 
 export function buildMinimalPlaceholderResults(userSkills) {
   const skills = Array.isArray(userSkills) ? userSkills : [];
+  const matched = skills.slice(0, 4);
+  const gaps = [
+    "Networking & referrals",
+    "Keyword-tuned resume",
+    "Portfolio or case study",
+  ];
+  const required = [...matched, ...gaps];
   return [
     {
       job_id: "exploratory",
       title: "Related opportunities & domains",
       company: "Explore",
       match_score: 0,
-      matched_skills: skills.slice(0, 4),
-      missing_skills: [
-        "Networking & referrals",
-        "Keyword-tuned resume",
-        "Portfolio or case study",
-      ],
+      required_skills: required,
+      matched_skills: matched,
+      missing_skills: gaps,
     },
   ];
 }

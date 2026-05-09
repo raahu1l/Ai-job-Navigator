@@ -72,7 +72,9 @@ def market_analysis_route():
     payload = request.get_json(silent=True) or {}
     trending_skills = payload.get("trending_skills", [])
     user_skills = payload.get("user_skills", [])
-    return jsonify(analyze_market_demand(trending_skills, user_skills))
+    live_jobs = payload.get("live_jobs")
+    lj = live_jobs if isinstance(live_jobs, list) else None
+    return jsonify(analyze_market_demand(trending_skills, user_skills, live_jobs=lj))
 
 
 @app.post("/api/crew-run")

@@ -17,6 +17,21 @@ import {
 
 const API_BASE = "https://ai-job-navigator-m9gq.onrender.com";
 
+const SLIM_JOB_DESC_MAX = 5000;
+
+function slimJobsForMarketInsights(jobs) {
+  const arr = Array.isArray(jobs) ? jobs : [];
+  return arr.map((j) => ({
+    job_id: String(j.job_id ?? ""),
+    title: j.title || "",
+    company: j.company || "",
+    description:
+      typeof j.description === "string"
+        ? j.description.slice(0, SLIM_JOB_DESC_MAX)
+        : "",
+  }));
+}
+
 function App() {
   const [trending, setTrending] = useState([]);
   const [results, setResults] = useState([]);
@@ -35,7 +50,6 @@ function App() {
   const [jobFetchMeta, setJobFetchMeta] = useState({
     count: 0,
     source: null,
-    debug: null,
   });
   const [showResultsSection, setShowResultsSection] = useState(false);
   const [trendingSkillsQuery, setTrendingSkillsQuery] = useState("");
@@ -123,9 +137,6 @@ function App() {
       setJobFetchMeta({
         count: typeof fetchJobsData?.count === "number" ? fetchJobsData.count : jobs.length,
         source: fetchJobsData?.source ?? null,
-        debug: fetchJobsData?.debug && typeof fetchJobsData.debug === "object"
-          ? fetchJobsData.debug
-          : null,
       });
       setActiveAgent(1);
       await sleep(800);
@@ -180,6 +191,7 @@ function App() {
                 ? topTrendingSkills
                 : FALLBACK_TRENDING_CHART.map((x) => x.skill),
             user_skills: skills,
+            live_jobs: slimJobsForMarketInsights(jobs),
           }),
         });
 
@@ -210,7 +222,7 @@ function App() {
       setMarketAnalysis({ ...DEFAULT_MARKET_ANALYSIS });
       setRoadmapVisible(false);
       setLearningPath(null);
-      setJobFetchMeta({ count: 0, source: null, debug: null });
+      setJobFetchMeta({ count: 0, source: null });
       setLoadingPhase(null);
       window.setTimeout(() => {
         resultsGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -229,7 +241,7 @@ function App() {
     setRoadmapVisible(false);
     setRoadmapTargetLabel("");
     setRoadmapError(null);
-    setJobFetchMeta({ count: 0, source: null, debug: null });
+    setJobFetchMeta({ count: 0, source: null });
     setActiveAgent(-1);
     setIsLoading(false);
     setLoadingPhase(null);
@@ -242,6 +254,9 @@ function App() {
     const title = job?.title || "Role";
     const company = job?.company || "Employer";
     const missing = Array.isArray(job?.missing_skills) ? job.missing_skills : [];
+    if (missing.length === 0) {
+      return;
+    }
     setRoadmapVisible(true);
     setRoadmapTargetLabel(`${title} · ${company}`);
     setRoadmapError(null);
@@ -258,12 +273,13 @@ function App() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          missing_skills: missing.length ? missing : ["Core skills"],
+          missing_skills: missing,
           target_role: title,
           demand_context: {
             roles_in_current_set: rolesInCurrentSet,
             match_score_percent: Math.round(Number(job?.match_score) || 0),
             top_missing_skill: missing[0] || "",
+            live_jobs: slimJobsForMarketInsights(liveJobs),
           },
         }),
       });
@@ -367,40 +383,26 @@ function App() {
                 </div>
               )}
 
-              {(jobFetchMeta.source != null ||
-                jobFetchMeta.count > 0 ||
-                jobFetchMeta.debug) && (
-                <div className="stats-bar stats-bar--minimal" role="status">
-                  <span>
-                    <strong>{jobFetchMeta.count}</strong> job{jobFetchMeta.count === 1 ? "" : "s"}{" "}
-                    analyzed
-                  </span>
-                  <span className="stats-bar__sep">·</span>
-                  <span>
-                    Source:{" "}
-                    <strong>
-                      {jobFetchMeta.source === "adzuna"
-                        ? "Live (Adzuna)"
-                        : jobFetchMeta.source === "fallback"
-                          ? "Fallback dataset"
-                          : jobFetchMeta.source ?? "—"}
-                    </strong>
-                  </span>
+              {(jobFetchMeta.source != null || jobFetchMeta.count > 0) && (
+                <div className="live-data-row" role="status">
+                  <p className="live-data-row__primary">
+                    {jobFetchMeta.source === "adzuna"
+                      ? `Analyzed ${jobFetchMeta.count} live job posting${jobFetchMeta.count === 1 ? "" : "s"}`
+                      : `Analyzed ${jobFetchMeta.count} job posting${jobFetchMeta.count === 1 ? "" : "s"} for your search`}
+                  </p>
+                  <p className="live-data-row__secondary">
+                    {jobFetchMeta.source === "adzuna"
+                      ? "Powered by Adzuna market data"
+                      : jobFetchMeta.source === "fallback"
+                        ? "Curated sample listings — comparable matching experience"
+                        : "SkillNav"}
+                  </p>
                   {results.length > 0 && (
-                    <>
-                      <span className="stats-bar__sep">·</span>
-                      <span>
-                        <strong>{results.length}</strong> roles ranked
-                      </span>
-                    </>
-                  )}
-                  {jobFetchMeta.debug && (
-                    <details className="stats-bar__debug">
-                      <summary>Fetch debug</summary>
-                      <pre className="stats-bar__debug-pre">
-                        {JSON.stringify(jobFetchMeta.debug, null, 2)}
-                      </pre>
-                    </details>
+                    <p className="live-data-row__tertiary">
+                      Showing{" "}
+                      <span className="live-data-row__accent">{results.length}</span>
+                      {" "}top matching role{results.length === 1 ? "" : "s"}
+                    </p>
                   )}
                 </div>
               )}
