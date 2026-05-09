@@ -12,6 +12,7 @@ function App() {
   const [results, setResults] = useState([]);
   const [liveJobs, setLiveJobs] = useState([]);
   const [location, setLocation] = useState("bangalore");
+  const [activeAgent, setActiveAgent] = useState(-1);
   const [exampleSkills, setExampleSkills] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -19,6 +20,16 @@ function App() {
   const [marketAnalysis, setMarketAnalysis] = useState(null);
   const [learningPath, setLearningPath] = useState(null);
   const resultsGridRef = useRef(null);
+  const pipelineAgents = [
+    { icon: "🔍", label: "Job Researcher" },
+    { icon: "🧠", label: "Skill Extractor" },
+    { icon: "📊", label: "Gap Analyzer" },
+    { icon: "🎯", label: "Career Coach" },
+  ];
+
+  const wait = (ms) => new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 
   useEffect(() => {
     const fetchTrending = async () => {
@@ -44,6 +55,8 @@ function App() {
     try {
       setError("");
       setIsLoading(true);
+      setActiveAgent(0);
+      await wait(250);
 
       const fetchJobsResponse = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/fetch-jobs", {
         method: "POST",
@@ -63,6 +76,8 @@ function App() {
       const fetchJobsData = await fetchJobsResponse.json();
       const jobs = Array.isArray(fetchJobsData?.jobs) ? fetchJobsData.jobs : [];
       setLiveJobs(jobs);
+      setActiveAgent(1);
+      await wait(250);
 
       const response = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/analyze", {
         method: "POST",
@@ -80,6 +95,8 @@ function App() {
       const nextResults = Array.isArray(data) ? data : [];
       setResults(nextResults);
       setLearningPath(null);
+      setActiveAgent(2);
+      await wait(250);
 
       const topTrendingSkills = trending
         .slice(0, 5)
@@ -109,6 +126,9 @@ function App() {
         console.log("Market analysis error if any:", err);
         setMarketAnalysis(null);
       }
+      setActiveAgent(3);
+      await wait(300);
+      setActiveAgent(4);
 
       if (nextResults.length > 0) {
         setIsResultsHighlighted(true);
@@ -121,6 +141,7 @@ function App() {
       }
     } catch (err) {
       setError(err.message || "Something went wrong");
+      setActiveAgent(-1);
     } finally {
       setIsLoading(false);
     }
@@ -137,6 +158,7 @@ function App() {
     setExampleSkills([]);
     setMarketAnalysis(null);
     setLearningPath(null);
+    setActiveAgent(-1);
   };
 
   const handleGetLearningPath = async (job) => {
@@ -277,6 +299,30 @@ function App() {
             ))}
           </div>
         )}
+
+        <section className="pipeline-card">
+          <div className="pipeline-title">AI Agent Pipeline</div>
+          <div className="pipeline-row">
+            {pipelineAgents.map((agent, index) => {
+              let state = "idle";
+              if (activeAgent === 4 || activeAgent > index) {
+                state = "completed";
+              } else if (activeAgent === index) {
+                state = "active";
+              }
+
+              return (
+                <div className="pipeline-item-wrap" key={agent.label}>
+                  <div className={`pipeline-agent pipeline-agent--${state}`}>
+                    <span className="pipeline-icon">{state === "completed" ? "✓" : agent.icon}</span>
+                    <span className="pipeline-label">{agent.label}</span>
+                  </div>
+                  {index < pipelineAgents.length - 1 && <div className="pipeline-connector" />}
+                </div>
+              );
+            })}
+          </div>
+        </section>
 
         {results.length > 0 && (
           <div
