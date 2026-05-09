@@ -26,7 +26,6 @@ function App() {
   const [liveJobs, setLiveJobs] = useState([]);
   const [location, setLocation] = useState("bangalore");
   const [activeAgent, setActiveAgent] = useState(-1);
-  const [exampleSkills, setExampleSkills] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingPhase, setLoadingPhase] = useState(null);
   const [error, setError] = useState("");
@@ -34,6 +33,7 @@ function App() {
   const [marketAnalysis, setMarketAnalysis] = useState(null);
   const [learningPath, setLearningPath] = useState(null);
   const [showResultsSection, setShowResultsSection] = useState(false);
+  const [trendingSkillsQuery, setTrendingSkillsQuery] = useState("");
   const resultsGridRef = useRef(null);
   const lastSkillsRef = useRef([]);
 
@@ -61,8 +61,11 @@ function App() {
   useEffect(() => {
     const fetchTrending = async () => {
       try {
-        setError("");
-        const response = await fetch(`${API_BASE}/api/trending`);
+        const q = trendingSkillsQuery.trim();
+        const url = q
+          ? `${API_BASE}/api/trending?skills=${encodeURIComponent(q)}`
+          : `${API_BASE}/api/trending`;
+        const response = await fetch(url);
 
         if (!response.ok) {
           throw new Error("Failed to fetch trending skills");
@@ -76,10 +79,11 @@ function App() {
     };
 
     fetchTrending();
-  }, []);
+  }, [trendingSkillsQuery]);
 
   const handleAnalyze = async (skills) => {
     lastSkillsRef.current = skills;
+    setTrendingSkillsQuery(skills.join(","));
     try {
       setShowResultsSection(true);
       setError("");
@@ -240,21 +244,16 @@ function App() {
     }
   };
 
-  const runExample = (skills) => {
-    setExampleSkills(skills);
-    handleAnalyze(skills);
-  };
-
   const handleClear = () => {
     setResults([]);
     setLiveJobs([]);
-    setExampleSkills([]);
     setMarketAnalysis(null);
     setLearningPath(null);
     setActiveAgent(-1);
     setIsLoading(false);
     setLoadingPhase(null);
     setShowResultsSection(false);
+    setTrendingSkillsQuery("");
     setError("");
   };
 
@@ -316,62 +315,15 @@ function App() {
           <h1>
             Find Your Perfect <span>Skill Match</span>
           </h1>
-          <p>
-            Analyze hundreds of job postings instantly. See your match score,
-            skill gaps, and exactly what to learn next.
+          <p className="hero-lead">
+            Match roles from live listings, spot skill gaps, and get a learning roadmap—across tech, business, and more.
           </p>
-          <div className="examples-label">Try an example:</div>
-          <div className="examples">
-            <button
-              type="button"
-              className="example-btn"
-              onClick={() =>
-                runExample([
-                  "Python",
-                  "Engineering",
-                  "Information Technology",
-                  "Research",
-                ])
-              }
-            >
-              Python Developer
-            </button>
-            <button
-              type="button"
-              className="example-btn"
-              onClick={() =>
-                runExample([
-                  "Sales",
-                  "Management",
-                  "Business Development",
-                  "Marketing",
-                ])
-              }
-            >
-              Sales Manager
-            </button>
-            <button
-              type="button"
-              className="example-btn"
-              onClick={() =>
-                runExample([
-                  "Analyst",
-                  "Research",
-                  "Finance",
-                  "Information Technology",
-                ])
-              }
-            >
-              Data Analyst
-            </button>
-          </div>
         </section>
 
-        <div className="input-card">
+        <div className="input-card input-card--compact">
           <SkillInput
             onAnalyze={handleAnalyze}
             isLoading={isLoading}
-            exampleSkills={exampleSkills}
             hasResults={showResultsSection && !isLoading}
             onClear={handleClear}
             location={location}
@@ -380,100 +332,102 @@ function App() {
           {error && <p className="input-error">{error}</p>}
         </div>
 
-        {(isLoading || showResultsSection) && (
-          <div
-            ref={resultsGridRef}
-            className={`results-section ${isResultsHighlighted ? "results-section--highlight" : ""}`}
-          >
-            <section className="pipeline-card pipeline-card--sticky">
-              <div className="pipeline-title">AI Agent Pipeline</div>
-              <div className="pipeline-row">
-                {pipelineAgents.map((agent, index) => {
-                  let state = "idle";
-                  if (activeAgent === 4 || activeAgent > index) {
-                    state = "completed";
-                  } else if (activeAgent === index) {
-                    state = "active";
-                  }
+        <div
+          ref={resultsGridRef}
+          className={`results-section ${isResultsHighlighted ? "results-section--highlight" : ""}`}
+        >
+          <section className="pipeline-card pipeline-card--sticky pipeline-card--compact">
+            <div className="pipeline-title">AI Agent Pipeline</div>
+            <div className="pipeline-row">
+              {pipelineAgents.map((agent, index) => {
+                let state = "idle";
+                if (activeAgent === 4 || activeAgent > index) {
+                  state = "completed";
+                } else if (activeAgent === index) {
+                  state = "active";
+                }
 
-                  return (
-                    <div className="pipeline-item-wrap" key={agent.label}>
-                      <div className={`pipeline-agent pipeline-agent--${state}`}>
-                        <span className="pipeline-icon">{state === "completed" ? "✓" : agent.icon}</span>
-                        <span className="pipeline-label">{agent.label}</span>
-                      </div>
-                      {index < pipelineAgents.length - 1 && <div className="pipeline-connector" />}
+                return (
+                  <div className="pipeline-item-wrap" key={agent.label}>
+                    <div className={`pipeline-agent pipeline-agent--${state}`}>
+                      <span className="pipeline-icon">{state === "completed" ? "✓" : agent.icon}</span>
+                      <span className="pipeline-label">{agent.label}</span>
                     </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            {loadingMessage && (
-              <div className="analysis-loading-banner" role="status">
-                {loadingMessage}
-              </div>
-            )}
-
-            {exploratoryMode && results.length > 0 && (
-              <div className="exploratory-banner" role="note">
-                {EXPLORATORY_BANNER}
-              </div>
-            )}
-
-            {results.length > 0 && (
-              <>
-                <div className="stats-bar">
-                  <div className="stat-item">
-                    <span className="stat-number">500</span>
-                    <span className="stat-label">Jobs Analyzed</span>
+                    {index < pipelineAgents.length - 1 && <div className="pipeline-connector" />}
                   </div>
-                  <div className="stat-item">
-                    <span className="stat-number">{results.length}</span>
-                    <span className="stat-label">Roles You Match</span>
-                  </div>
-                  <div className="stat-item">
-                    <span className="stat-number">{uniqueMissingCount}</span>
-                    <span className="stat-label">Skills to Learn</span>
-                  </div>
-                </div>
-
-                <div className="top-roles-bar">
-                  <span className="top-roles-label">
-                    You're best suited for:
-                  </span>
-                  {(top3Titles.length > 0
-                    ? top3Titles
-                    : ["Software & data", "Product & delivery", "Cross-functional roles"]
-                  ).map((title) => (
-                    <span className="role-tag" key={title}>{title}</span>
-                  ))}
-                </div>
-
-                <div className="results-grid results-grid--jobs-first">
-                  <div className="jobs-column">
-                    <JobResults
-                      results={results}
-                      onGetLearningPath={handleGetLearningPath}
-                    />
-                  </div>
-                  <SkillGap results={results} className="gap-card" />
-                </div>
-              </>
-            )}
-
-            <MarketAnalysis analysis={displayMarket} />
-
-            <div className="chart-card chart-card--in-results">
-              <TrendChart trending={chartData} usingFallback={!trending?.length} />
+                );
+              })}
             </div>
+          </section>
 
-            <LearningPath
-              learningPath={learningPath}
-              loading={loadingPhase === "roadmap"}
-            />
-          </div>
-        )}
+          {(isLoading || showResultsSection) && (
+            <>
+              {loadingMessage && (
+                <div className="analysis-loading-banner" role="status">
+                  {loadingMessage}
+                </div>
+              )}
+
+              {exploratoryMode && results.length > 0 && (
+                <div className="exploratory-banner" role="note">
+                  {EXPLORATORY_BANNER}
+                </div>
+              )}
+
+              {results.length > 0 && (
+                <>
+                  <div className="stats-bar">
+                    <div className="stat-item">
+                      <span className="stat-number">500</span>
+                      <span className="stat-label">Jobs Analyzed</span>
+                    </div>
+                    <div className="stat-item">
+                      <span className="stat-number">{results.length}</span>
+                      <span className="stat-label">Roles You Match</span>
+                    </div>
+                    <div className="stat-item">
+                      <span className="stat-number">{uniqueMissingCount}</span>
+                      <span className="stat-label">Skills to Learn</span>
+                    </div>
+                  </div>
+
+                  <div className="top-roles-bar">
+                    <span className="top-roles-label">
+                      You're best suited for:
+                    </span>
+                    {(top3Titles.length > 0
+                      ? top3Titles
+                      : ["Software & data", "Product & delivery", "Cross-functional roles"]
+                    ).map((title) => (
+                      <span className="role-tag" key={title}>{title}</span>
+                    ))}
+                  </div>
+
+                  <div className="results-grid results-grid--jobs-first">
+                    <div className="jobs-column">
+                      <JobResults
+                        results={results}
+                        onGetLearningPath={handleGetLearningPath}
+                      />
+                    </div>
+                    <SkillGap results={results} className="gap-card" />
+                  </div>
+                </>
+              )}
+
+              <MarketAnalysis analysis={displayMarket} />
+
+              <div className="chart-card chart-card--in-results">
+                <TrendChart trending={chartData} usingFallback={!trending?.length} />
+              </div>
+
+              <LearningPath
+                learningPath={learningPath}
+                loading={loadingPhase === "roadmap"}
+              />
+            </>
+          )}
+        </div>
       </main>
 
       <footer className="footer">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 const SKILL_SUGGESTION_GROUPS = [
   { label: "Engineering", skills: ["Python", "React", "SQL"] },
@@ -16,19 +16,11 @@ function SkillInput({
   isLoading,
   hasResults,
   onClear,
-  exampleSkills,
   location,
   setLocation,
 }) {
   const [skills, setSkills] = useState([]);
   const [inputValue, setInputValue] = useState("");
-
-  useEffect(() => {
-    if (Array.isArray(exampleSkills) && exampleSkills.length > 0) {
-      setSkills(exampleSkills);
-      setInputValue("");
-    }
-  }, [exampleSkills]);
 
   const addSkill = (value) => {
     const trimmed = value.trim();

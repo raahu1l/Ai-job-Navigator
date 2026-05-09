@@ -34,7 +34,9 @@ def analyze_route():
 @app.get("/api/trending")
 def trending_route():
     """Technical skills from Adzuna titles/descriptions + whitelist (not Kaggle categories)."""
-    return jsonify(get_trending())
+    skills_raw = request.args.get("skills", "").strip()
+    user_skills = [s.strip() for s in skills_raw.split(",") if s.strip()] if skills_raw else None
+    return jsonify(get_trending(user_skills=user_skills))
 
 
 @app.post("/api/extract-skills")

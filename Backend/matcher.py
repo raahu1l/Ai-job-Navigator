@@ -3,6 +3,12 @@ import re
 from pathlib import Path
 
 from job_fetcher import fetch_jobs
+from skill_domain import (
+    detect_skill_domain,
+    domain_job_search_query,
+    prioritize_trending_for_domain,
+)
+from skill_filters import filter_skill_list
 from technical_trending import extract_technical_skills_from_job, trending_from_jobs
 
 
@@ -27,7 +33,8 @@ def _skills_from_live_job(job: dict) -> list[str]:
         "the", "and", "for", "with", "our", "global",
     }
     out = [w for w in words if w.lower() not in skip][:8]
-    return out if out else ["Role-specific requirements"]
+    raw = out if out else ["Role-specific requirements"]
+    return filter_skill_list(raw) or ["Role-specific requirements"]
 
 
 def _analyze_live_jobs(user_skill_set: set[str], job_results: list) -> list:
@@ -42,8 +49,10 @@ def _analyze_live_jobs(user_skill_set: set[str], job_results: list) -> list:
                 matched_skills.append(disp)
             else:
                 missing_skills.append(disp)
-        total = len(display_skills)
-        match_score = round((len(matched_skills) / total) * 100, 2) if total else 0.0
+        matched_skills = filter_skill_list(matched_skills)
+        missing_skills = filter_skill_list(missing_skills)
+        total = max(len(matched_skills) + len(missing_skills), 1)
+        match_score = round((len(matched_skills) / total) * 100, 2)
         results.append(
             {
                 "job_id": str(job.get("job_id", "")),
@@ -86,8 +95,13 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
             else:
                 missing_skills.append(skill)
 
+        matched_skills = filter_skill_list(matched_skills)
+        missing_skills = filter_skill_list(missing_skills)
+        total_effective = len(matched_skills) + len(missing_skills)
+        if total_effective == 0:
+            continue
         matched_count = len(matched_skills)
-        match_score = (matched_count / total_job_skills) * 100
+        match_score = (matched_count / total_effective) * 100
         if match_score == 0:
             continue
 
@@ -110,7 +124,9 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
     # still return jobs so the UI can show actionable missing-skill guidance.
     fallback = []
     for job in JOBS[:10]:
-        job_skills = [str(skill).strip() for skill in job.get("skills", []) if str(skill).strip()]
+        job_skills = filter_skill_list(
+            [str(skill).strip() for skill in job.get("skills", []) if str(skill).strip()]
+        )
         fallback.append(
             {
                 "job_id": str(job.get("job_id", "")),
@@ -125,28 +141,28 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
     return fallback
 
 
-def get_trending(top_n: int = 15) -> list:
+def get_trending(top_n: int = 15, user_skills: list | None = None) -> list:
     """
     Technical skills only: parsed from live Adzuna job titles + descriptions
     against a whitelist. Does not use legacy Kaggle `skills` categories.
     Falls back to the same extraction on static jobs (title/description only).
     """
-    result = fetch_jobs(
-        "software developer data engineer full stack",
-        "india",
-        results=50,
-    )
+    domain = detect_skill_domain(user_skills)
+    search_q = domain_job_search_query(domain)
+    result = fetch_jobs(search_q, "india", results=50)
     jobs = result.get("jobs") or []
-    trending = trending_from_jobs(jobs, top_n=top_n)
+    trending = trending_from_jobs(jobs, top_n=top_n * 2)
+    trending = prioritize_trending_for_domain(trending, domain, top_n)
     if trending:
         print(
-            f"Trending skills: {len(trending)} entries from job fetch "
+            f"Trending skills: {len(trending)} entries (domain={domain}) from job fetch "
             f"(source={result.get('source', '?')}, jobs={len(jobs)})"
         )
         return trending
 
     # No whitelist hits from live/fallback fetch — try local JSON titles (no category fields)
-    trending = trending_from_jobs(JOBS, top_n=top_n)
+    trending = trending_from_jobs(JOBS, top_n=top_n * 2)
+    trending = prioritize_trending_for_domain(trending, domain, top_n)
     if trending:
         print(f"Trending skills: fallback static titles only, {len(trending)} entries")
         return trending

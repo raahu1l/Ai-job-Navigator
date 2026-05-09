@@ -3,6 +3,14 @@ import json
 from groq import Groq
 from dotenv import load_dotenv
 
+from skill_domain import (
+    DOMAIN_GENERAL,
+    DOMAIN_TRENDING_HINTS,
+    detect_skill_domain,
+    domain_market_context,
+)
+from skill_filters import filter_skill_list
+
 def extract_json(text: str):
     import re
     # Remove thinking tags if present
@@ -43,11 +51,13 @@ Job Description:
     text = extract_json(response.choices[0].message.content)
     try:
         skills = json.loads(text)
-        return skills if isinstance(skills, list) else []
+        skills = skills if isinstance(skills, list) else []
+        return filter_skill_list(skills)
     except:
         return []
 
 def generate_learning_path(missing_skills: list, target_role: str) -> dict:
+    missing_skills = filter_skill_list(missing_skills if isinstance(missing_skills, list) else [])
     if not missing_skills:
         return {"message": "You have all required skills!", "steps": []}
     
@@ -89,6 +99,11 @@ Target role: {target_role}
         }
 
 def analyze_market_demand(trending_skills: list, user_skills: list) -> dict:
+    trending_skills = filter_skill_list(trending_skills if isinstance(trending_skills, list) else [])
+    user_skills = filter_skill_list(user_skills if isinstance(user_skills, list) else [])
+    domain = detect_skill_domain(user_skills)
+    domain_hint = domain_market_context(domain)
+
     prompt = f"""
 You are a job market analyst.
 Given these market trending skills and user's current skills,
@@ -101,6 +116,8 @@ Format exactly:
   "biggest_opportunity": "single most impactful skill to learn",
   "demand_trend": "growing/stable/declining for user's skill set"
 }}
+
+{domain_hint}
 
 Trending skills in market: {trending_skills}
 User skills: {user_skills}
@@ -117,9 +134,10 @@ User skills: {user_skills}
         text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except:
+        hints = DOMAIN_TRENDING_HINTS.get(domain, DOMAIN_TRENDING_HINTS[DOMAIN_GENERAL])
         return {
             "market_summary": "The job market is actively evolving.",
             "your_strength": "Your current skills show solid foundation.",
-            "biggest_opportunity": trending_skills[0] if trending_skills else "Python",
+            "biggest_opportunity": trending_skills[0] if trending_skills else hints[0],
             "demand_trend": "growing"
         }
