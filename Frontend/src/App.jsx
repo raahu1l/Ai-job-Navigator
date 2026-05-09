@@ -5,6 +5,7 @@ import JobResults from "./components/JobResults";
 import TrendChart from "./components/TrendChart";
 import MarketAnalysis from "./components/MarketAnalysis";
 import LearningPath from "./components/LearningPath";
+import TopInDemandSkills from "./components/TopInDemandSkills";
 import {
   EXPLORATORY_BANNER,
   DEFAULT_MARKET_ANALYSIS,
@@ -51,6 +52,7 @@ function App() {
     count: 0,
     source: null,
   });
+  const [skillDemandSnapshot, setSkillDemandSnapshot] = useState(null);
   const [showResultsSection, setShowResultsSection] = useState(false);
   const [trendingSkillsQuery, setTrendingSkillsQuery] = useState("");
   const resultsGridRef = useRef(null);
@@ -69,6 +71,14 @@ function App() {
   const exploratoryMode = useMemo(
     () => isExploratoryResults(results),
     [results],
+  );
+
+  const listingStats = useMemo(
+    () => ({
+      fetched: Math.max(jobFetchMeta.count || 0, liveJobs.length || 0),
+      ranked: results.length,
+    }),
+    [jobFetchMeta.count, liveJobs.length, results.length],
   );
 
   const chartData = useMemo(() => {
@@ -109,6 +119,7 @@ function App() {
       setLearningPath(null);
       setRoadmapTargetLabel("");
       setRoadmapError(null);
+      setSkillDemandSnapshot(null);
       setShowResultsSection(true);
       setError("");
       setIsLoading(true);
@@ -138,6 +149,33 @@ function App() {
         count: typeof fetchJobsData?.count === "number" ? fetchJobsData.count : jobs.length,
         source: fetchJobsData?.source ?? null,
       });
+      const slimForDemand = slimJobsForMarketInsights(jobs);
+      let demandPayload = {
+        unavailable: true,
+        total_jobs_analyzed: slimForDemand.length,
+        top_skills: [],
+        insight_line: "",
+        domain_label: "",
+      };
+      try {
+        const demandRes = await fetch(`${API_BASE}/api/skill-demand`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            user_skills: skills,
+            live_jobs: slimForDemand,
+          }),
+        });
+        if (demandRes.ok) {
+          const parsed = await demandRes.json();
+          demandPayload = { ...parsed, unavailable: false };
+        }
+      } catch {
+        /* keep demandPayload.unavailable */
+      }
+      setSkillDemandSnapshot(demandPayload);
       setActiveAgent(1);
       await sleep(800);
 
@@ -223,6 +261,7 @@ function App() {
       setRoadmapVisible(false);
       setLearningPath(null);
       setJobFetchMeta({ count: 0, source: null });
+      setSkillDemandSnapshot(null);
       setLoadingPhase(null);
       window.setTimeout(() => {
         resultsGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -242,6 +281,7 @@ function App() {
     setRoadmapTargetLabel("");
     setRoadmapError(null);
     setJobFetchMeta({ count: 0, source: null });
+    setSkillDemandSnapshot(null);
     setActiveAgent(-1);
     setIsLoading(false);
     setLoadingPhase(null);
@@ -277,7 +317,8 @@ function App() {
           target_role: title,
           demand_context: {
             roles_in_current_set: rolesInCurrentSet,
-            match_score_percent: Math.round(Number(job?.match_score) || 0),
+            match_score_percent:
+              Math.round((Number(job?.match_score) || 0) * 10) / 10,
             top_missing_skill: missing[0] || "",
             live_jobs: slimJobsForMarketInsights(liveJobs),
           },
@@ -362,7 +403,13 @@ function App() {
                       <span className="pipeline-icon">{state === "completed" ? "✓" : agent.icon}</span>
                       <span className="pipeline-label">{agent.label}</span>
                     </div>
-                    {index < pipelineAgents.length - 1 && <div className="pipeline-connector" />}
+                    {index < pipelineAgents.length - 1 && (
+                      <div
+                        className={`pipeline-connector ${
+                          activeAgent === index ? "pipeline-connector--flow" : ""
+                        }`}
+                      />
+                    )}
                   </div>
                 );
               })}
@@ -397,14 +444,30 @@ function App() {
                         ? "Curated sample listings — comparable matching experience"
                         : "SkillNav"}
                   </p>
-                  {results.length > 0 && (
+                  {listingStats.ranked > 0 && (
                     <p className="live-data-row__tertiary">
-                      Showing{" "}
-                      <span className="live-data-row__accent">{results.length}</span>
-                      {" "}top matching role{results.length === 1 ? "" : "s"}
+                      {listingStats.fetched > listingStats.ranked ? (
+                        <>
+                          Showing{" "}
+                          <span className="live-data-row__accent">{listingStats.ranked}</span> ranked{" "}
+                          match{listingStats.ranked === 1 ? "" : "es"} from{" "}
+                          <span className="live-data-row__accent">{listingStats.fetched}</span> postings
+                          scored in this run
+                        </>
+                      ) : (
+                        <>
+                          Showing{" "}
+                          <span className="live-data-row__accent">{listingStats.ranked}</span> ranked role
+                          match{listingStats.ranked === 1 ? "" : "es"} for this analysis
+                        </>
+                      )}
                     </p>
                   )}
                 </div>
+              )}
+
+              {skillDemandSnapshot && (
+                <TopInDemandSkills snapshot={skillDemandSnapshot} />
               )}
 
               {results.length > 0 && (

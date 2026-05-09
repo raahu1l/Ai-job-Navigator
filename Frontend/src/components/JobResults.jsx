@@ -1,3 +1,5 @@
+import { formatMatchPercent } from "../analysisFallbacks";
+
 function mergeRequiredSkills(job, matched, missing) {
   const fromApi = Array.isArray(job.required_skills) ? job.required_skills : [];
   if (fromApi.length > 0) {
@@ -38,10 +40,11 @@ function JobResults({ results, onGetLearningPath }) {
         const required = mergeRequiredSkills(job, matched, missing);
         const hasGaps = missing.length > 0;
         const hasRequirements = required.length > 0;
-        const score = Number(job.match_score) || 0;
+        const score = Number(job.match_score);
+        const scoreSafe = Number.isFinite(score) ? score : 0;
         const title = job.title || "Role";
         const company = job.company || "Employer";
-        const scoreColor = getMatchScoreColor(score);
+        const scoreColor = getMatchScoreColor(scoreSafe);
 
         return (
           <article
@@ -58,7 +61,7 @@ function JobResults({ results, onGetLearningPath }) {
                 style={{ "--job-score-color": scoreColor }}
               >
                 <span className="job-card__score-label">Match</span>
-                <span className="job-card__score-value">{Math.round(score)}%</span>
+                <span className="job-card__score-value">{formatMatchPercent(scoreSafe)}%</span>
               </div>
             </div>
 
@@ -67,7 +70,7 @@ function JobResults({ results, onGetLearningPath }) {
                 <div
                   className="progress-fill"
                   style={{
-                    width: `${Math.min(100, Math.max(0, score))}%`,
+                    width: `${Math.min(100, Math.max(0, scoreSafe))}%`,
                     background: scoreColor,
                   }}
                 />

@@ -18,6 +18,21 @@ DOMAIN_HR = "hr"
 DOMAIN_DESIGN = "design"
 DOMAIN_GENERAL = "general"
 
+DOMAIN_DISPLAY_LABELS: dict[str, str] = {
+    DOMAIN_TECH: "Technology",
+    DOMAIN_FINANCE: "Finance & accounting",
+    DOMAIN_SALES: "Sales",
+    DOMAIN_MARKETING: "Marketing",
+    DOMAIN_HR: "Human resources",
+    DOMAIN_DESIGN: "Design",
+    DOMAIN_GENERAL: "General / mixed",
+}
+
+
+def domain_display_label(domain: str) -> str:
+    return DOMAIN_DISPLAY_LABELS.get(domain, DOMAIN_DISPLAY_LABELS[DOMAIN_GENERAL])
+
+
 # (domain, tuple of lowercase substrings to match against each user skill)
 _DOMAIN_TRIGGERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (

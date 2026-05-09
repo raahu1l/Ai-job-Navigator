@@ -117,7 +117,7 @@ def _analyze_live_jobs(user_skill_keys: set[str], job_results: list) -> list:
             }
         )
     results.sort(key=lambda item: item["match_score"], reverse=True)
-    return [_sanitize_job_result(r) for r in results[:10]]
+    return [_sanitize_job_result(r) for r in results]
 
 
 def analyze(user_skills: list, job_results: list | None = None) -> list:
@@ -179,7 +179,8 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
 
     results.sort(key=lambda item: item["match_score"], reverse=True)
     if results:
-        return [_sanitize_job_result(r) for r in results[:10]]
+        # Cap UI payload on static corpus (can be large); live path stays aligned with fetched batch size.
+        return [_sanitize_job_result(r) for r in results[:40]]
 
     # Fallback: if none of the entered skills match the dataset vocabulary,
     # still return jobs so the UI can show actionable missing-skill guidance.

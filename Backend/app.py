@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from matcher import analyze, get_trending
 from agents import extract_skills_from_jd, generate_learning_path, analyze_market_demand
+from market_insights import build_skill_demand_dashboard
 from crew import SkillNavCrew
 from job_fetcher import fetch_jobs
 
@@ -65,6 +66,17 @@ def learning_path_route():
             demand_context=demand_context if isinstance(demand_context, dict) else None,
         )
     )
+
+
+@app.post("/api/skill-demand")
+def skill_demand_route():
+    """Top in-demand skills from live job text + inferred user domain (no LLM)."""
+    payload = request.get_json(silent=True) or {}
+    user_skills = payload.get("user_skills", [])
+    live_jobs = payload.get("live_jobs")
+    jobs = live_jobs if isinstance(live_jobs, list) else []
+    us = user_skills if isinstance(user_skills, list) else []
+    return jsonify(build_skill_demand_dashboard(us, jobs))
 
 
 @app.post("/api/market-analysis")

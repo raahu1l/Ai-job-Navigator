@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from skill_domain import detect_skill_domain, domain_display_label
 from skill_filters import normalize_skill_key
 from technical_trending import extract_technical_skills_from_job
 
@@ -39,11 +40,16 @@ def skill_demand_from_jobs(jobs: list[dict] | None) -> dict[str, Any]:
         for skill in found:
             skill_job_hits[skill] += 1
 
+    def _pct(count: int, tot: int) -> float:
+        if tot <= 0:
+            return 0.0
+        return round(100 * count / tot, 1)
+
     # Top 5 by job mention count (stable order for ties: skill name)
     ranked = sorted(skill_job_hits.items(), key=lambda x: (-x[1], x[0].lower()))[:5]
     top_skills: list[dict[str, Any]] = []
     for skill, cnt in ranked:
-        pct = round(100 * cnt / total_jobs) if total_jobs else 0
+        pct = _pct(cnt, total_jobs)
         top_skills.append({
             "skill": skill,
             "jobs_with_skill": cnt,
@@ -113,7 +119,7 @@ def build_market_demand_insight(
                 f"(skills are matched from titles/descriptions; demand may still be high but not countable here)."
             )
             continue
-        pct = round(100 * cnt / total)
+        pct = round(100 * cnt / total, 1)
         bullets.append(
             f"'{canon}' appears in {cnt} of {total} analyzed live listings (~{pct}%)."
         )
@@ -147,7 +153,7 @@ def build_market_demand_insight(
         labeled = []
         for name in overlap_u[:3]:
             cnt = skill_counts.get(name, 0)
-            pct = round(100 * cnt / total)
+            pct = round(100 * cnt / total, 1)
             pct_union.append(pct)
             labeled.append(name)
         if labeled:
@@ -179,6 +185,75 @@ def build_market_demand_insight(
         headline = "No quantified demand snapshot for these listings."
 
     return headline, bullets, analytics
+
+
+def count_jobs_mentioning_any_skill(
+    jobs: list[dict] | None,
+    skill_labels: list[str],
+) -> int:
+    """How many job dicts mention at least one of the given canonical skill labels (whitelist extract)."""
+    if not jobs or not skill_labels:
+        return 0
+    want = {normalize_skill_key(s) for s in skill_labels if isinstance(s, str) and s.strip()}
+    if not want:
+        return 0
+    n = 0
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        found = extract_technical_skills_from_job(job)
+        for s in found:
+            if normalize_skill_key(str(s)) in want:
+                n += 1
+                break
+    return n
+
+
+def build_skill_demand_dashboard(
+    user_skills: list[str] | None,
+    jobs: list[dict] | None,
+) -> dict[str, Any]:
+    """
+    Compact demand snapshot for the dashboard: domain from user skills + frequencies from live jobs only.
+    """
+    us = [s for s in (user_skills or []) if isinstance(s, str) and s.strip()]
+    domain = detect_skill_domain(us)
+    dv = skill_demand_from_jobs(jobs)
+    total = dv["total_jobs"]
+    top = list(dv["top_skills"])
+
+    insight_line = ""
+    if total <= 0:
+        insight_line = (
+            "No live postings in this session—run another search to compute demand from real listings."
+        )
+    elif not top:
+        insight_line = (
+            "Few role-relevant skills matched our extraction rules in this set—"
+            "posting text may use uncommon phrasing."
+        )
+    elif len(top) >= 2:
+        s1, s2 = top[0]["skill"], top[1]["skill"]
+        union_n = count_jobs_mentioning_any_skill(jobs, [s1, s2])
+        pct_u = round(100 * union_n / total, 1) if total else 0.0
+        dl = domain_display_label(domain)
+        insight_line = (
+            f"In this {total}-listing {dl.lower()} sample, roles mentioning {s1} or {s2} "
+            f"cover ~{pct_u}% of postings—prioritizing both often widens similar opportunities fastest."
+        )
+    else:
+        s1 = top[0]["skill"]
+        p = top[0]["pct_of_jobs"]
+        insight_line = f"Strongest repeated signal in this sample: {s1} (~{p}% of postings)."
+
+    return {
+        "domain_key": domain,
+        "domain_label": domain_display_label(domain),
+        "total_jobs_analyzed": total,
+        "top_skills": top[:5],
+        "insight_line": insight_line.strip(),
+        "fact_lines": dv["facts_lines"][:5],
+    }
 
 
 def merge_roadmap_response(

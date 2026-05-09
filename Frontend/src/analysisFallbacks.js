@@ -45,6 +45,16 @@ export const FALLBACK_TRENDING_CHART = [
   { skill: "Data analysis", count: 5 },
 ];
 
+/** One decimal place, clamped 0–100 (match scores from API). */
+export function formatMatchPercent(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return "0.0";
+  }
+  const c = Math.min(100, Math.max(0, n));
+  return (Math.round(c * 10) / 10).toFixed(1);
+}
+
 export function normalizeMarketAnalysis(raw) {
   const d = raw && typeof raw === "object" ? raw : {};
   return {
@@ -138,7 +148,7 @@ export function normalizeLearningPath(raw) {
 
 export function buildFallbackResultsFromJobs(jobs, userSkills) {
   const skills = Array.isArray(userSkills) ? userSkills : [];
-  return (jobs || []).slice(0, 10).map((job, index) => {
+  return (jobs || []).slice(0, 50).map((job, index) => {
     const gaps =
       skills.length > 0
         ? [`Align: ${skills[0]}`, "Read full description", "Tailor your CV"]
