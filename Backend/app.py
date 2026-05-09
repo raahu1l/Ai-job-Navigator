@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from matcher import analyze, get_trending
 from agents import extract_skills_from_jd, generate_learning_path, analyze_market_demand
+from crew import SkillNavCrew
 
 app = Flask(__name__)
 CORS(app)
@@ -46,6 +47,16 @@ def market_analysis_route():
     trending_skills = payload.get("trending_skills", [])
     user_skills = payload.get("user_skills", [])
     return jsonify(analyze_market_demand(trending_skills, user_skills))
+
+
+@app.post("/api/crew-run")
+def crew_run_route():
+    payload = request.get_json(silent=True) or {}
+    user_skills = payload.get("user_skills", [])
+    job_results = payload.get("job_results", [])
+    trending_skills = payload.get("trending_skills", [])
+    crew = SkillNavCrew()
+    return jsonify(crew.run(user_skills, job_results, trending_skills))
 
 
 if __name__ == "__main__":
