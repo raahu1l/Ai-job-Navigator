@@ -18,7 +18,10 @@ export default function TopInDemandSkills({ snapshot }) {
 
   const total = snapshot.total_jobs_analyzed ?? 0;
   const top = Array.isArray(snapshot.top_skills) ? snapshot.top_skills : [];
-  const domain = snapshot.domain_label || "Your search";
+  const contextLine =
+    typeof snapshot.market_context_line === "string" && snapshot.market_context_line.trim()
+      ? snapshot.market_context_line.trim()
+      : "";
   const insight = typeof snapshot.insight_line === "string" ? snapshot.insight_line : "";
 
   return (
@@ -30,18 +33,21 @@ export default function TopInDemandSkills({ snapshot }) {
         id="demand-snapshot-title"
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="demand-snapshot__toggle-main">
-          Top in-demand skills
-          <span className="demand-snapshot__domain">{domain}</span>
-        </span>
-        <span className="demand-snapshot__meta">
-          {total > 0 ? (
-            <>
-              {top.length} signals · {total} live listing{total === 1 ? "" : "s"}
-            </>
-          ) : (
-            "No listing text in this run"
-          )}
+        <span className="demand-snapshot__toggle-text">
+          <span className="demand-snapshot__toggle-main">Top in-demand skills</span>
+          {contextLine ? (
+            <span className="demand-snapshot__context">{contextLine}</span>
+          ) : null}
+          <span className="demand-snapshot__meta">
+            {total > 0 ? (
+              <>
+                {top.length > 0 ? `${top.length} skills · ` : ""}
+                grounded in live Adzuna job text
+              </>
+            ) : (
+              "Run a live search to populate skill demand"
+            )}
+          </span>
         </span>
         <span className="demand-snapshot__chev" aria-hidden>
           {open ? "▾" : "▸"}

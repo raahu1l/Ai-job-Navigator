@@ -7,9 +7,56 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from skill_domain import detect_skill_domain, domain_display_label
+from skill_domain import (
+    DOMAIN_DISPLAY_LABELS,
+    detect_skill_domain,
+    domain_display_label,
+    domain_market_subtitle,
+    domain_role_match_noun,
+)
 from skill_filters import normalize_skill_key
 from technical_trending import extract_technical_skills_from_job
+
+# Exclude domain/industry-style tokens from "top skills" (not actionable tools).
+_DEMAND_SKILL_BLOCKLIST: frozenset[str] = frozenset({
+    "technology", "tech", "it", "software", "hardware",
+    "marketing", "sales", "finance", "accounting", "design", "hr", "recruiting",
+    "human resources", "business", "management", "leadership", "strategy",
+    "operations", "general", "professional", "industry", "sector", "corporate",
+    "data", "analytics",  # too broad as standalone demand chips
+    "full time", "part time", "remote", "hybrid",
+})
+
+
+def _is_actionable_demand_skill(skill: str) -> bool:
+    if not isinstance(skill, str) or not skill.strip():
+        return False
+    k = normalize_skill_key(skill)
+    if not k or len(k) < 2:
+        return False
+    if k in _DEMAND_SKILL_BLOCKLIST:
+        return False
+    for label in DOMAIN_DISPLAY_LABELS.values():
+        if k == normalize_skill_key(label):
+            return False
+    return True
+
+
+def _rank_filtered_skills(skill_job_hits: Counter[str], total_jobs: int, top_n: int) -> list[dict[str, Any]]:
+    ranked = sorted(skill_job_hits.items(), key=lambda x: (-x[1], x[0].lower()))
+    top_skills: list[dict[str, Any]] = []
+    for skill, cnt in ranked:
+        if not _is_actionable_demand_skill(skill):
+            continue
+        pct = round(100 * cnt / total_jobs, 1) if total_jobs else 0.0
+        top_skills.append({
+            "skill": skill,
+            "jobs_with_skill": cnt,
+            "pct_of_jobs": pct,
+        })
+        if len(top_skills) >= top_n:
+            break
+    return top_skills
 
 
 def skill_demand_from_jobs(jobs: list[dict] | None) -> dict[str, Any]:
@@ -40,28 +87,23 @@ def skill_demand_from_jobs(jobs: list[dict] | None) -> dict[str, Any]:
         for skill in found:
             skill_job_hits[skill] += 1
 
-    def _pct(count: int, tot: int) -> float:
-        if tot <= 0:
-            return 0.0
-        return round(100 * count / tot, 1)
-
-    # Top 5 by job mention count (stable order for ties: skill name)
-    ranked = sorted(skill_job_hits.items(), key=lambda x: (-x[1], x[0].lower()))[:5]
-    top_skills: list[dict[str, Any]] = []
-    for skill, cnt in ranked:
-        pct = _pct(cnt, total_jobs)
-        top_skills.append({
-            "skill": skill,
-            "jobs_with_skill": cnt,
-            "pct_of_jobs": pct,
-        })
+    # Top 5 actionable skills (filter vague domain/industry labels)
+    top_skills = _rank_filtered_skills(skill_job_hits, total_jobs, 5)
 
     facts_lines: list[str] = []
     for row in top_skills:
         s, c, p = row["skill"], row["jobs_with_skill"], row["pct_of_jobs"]
         facts_lines.append(f"{s}: mentioned in {c} of {total_jobs} analyzed listings (~{p}%).")
 
-    facts_block = "\n".join(facts_lines) if facts_lines else "No whitelist skills extracted from listings."
+    if facts_lines:
+        facts_block = "\n".join(facts_lines)
+    elif skill_job_hits:
+        facts_block = (
+            "Skills were extracted, but counts were dominated by broad category terms "
+            "that are hidden in the dashboard—try a more specific role search."
+        )
+    else:
+        facts_block = "No whitelist skills extracted from listings."
 
     return {
         "total_jobs": total_jobs,
@@ -209,6 +251,55 @@ def count_jobs_mentioning_any_skill(
     return n
 
 
+def _count_jobs_with_all_skills(
+    jobs: list[dict] | None,
+    skill_labels: list[str],
+) -> int:
+    if not jobs or not skill_labels:
+        return 0
+    want = [normalize_skill_key(s) for s in skill_labels if isinstance(s, str) and s.strip()]
+    if not want:
+        return 0
+    n = 0
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        found = {normalize_skill_key(str(x)) for x in extract_technical_skills_from_job(job)}
+        if all(w in found for w in want):
+            n += 1
+    return n
+
+
+def _concise_opportunity_line(
+    domain: str,
+    jobs: list[dict] | None,
+    top: list[dict[str, Any]],
+    total: int,
+) -> str:
+    if total <= 0 or not top:
+        return (
+            "Run a search with live results to see which skills unlock the most additional matches."
+        )
+    noun = domain_role_match_noun(domain)
+    s1 = top[0]["skill"]
+    p1 = float(top[0]["pct_of_jobs"])
+    if len(top) < 2:
+        return f"Adding {s1} could increase {noun} role matches by up to ~{p1:g}%."
+    s2 = top[1]["skill"]
+    c1 = int(top[0]["jobs_with_skill"])
+    c2 = int(top[1]["jobs_with_skill"])
+    union_n = count_jobs_mentioning_any_skill(jobs, [s1, s2])
+    both_n = _count_jobs_with_all_skills(jobs, [s1, s2])
+    union_pct = round(100 * union_n / total, 1) if total else 0.0
+    overlap_ratio = (both_n / min(c1, c2)) if min(c1, c2) > 0 else 0.0
+    # High co-occurrence → one combined line; else lead with the single strongest lift
+    if overlap_ratio >= 0.42 and union_pct > 0:
+        return (
+            f"Learning {s1} and {s2} together could unlock ~{union_pct:g}% more matching opportunities."
+        )
+    return f"Adding {s1} could increase {noun} role matches by up to ~{p1:g}%."
+
+
 def build_skill_demand_dashboard(
     user_skills: list[str] | None,
     jobs: list[dict] | None,
@@ -222,33 +313,21 @@ def build_skill_demand_dashboard(
     total = dv["total_jobs"]
     top = list(dv["top_skills"])
 
-    insight_line = ""
     if total <= 0:
         insight_line = (
-            "No live postings in this session—run another search to compute demand from real listings."
+            "Run a search with live job data to unlock skill-level demand and match-impact estimates."
         )
     elif not top:
         insight_line = (
-            "Few role-relevant skills matched our extraction rules in this set—"
-            "posting text may use uncommon phrasing."
-        )
-    elif len(top) >= 2:
-        s1, s2 = top[0]["skill"], top[1]["skill"]
-        union_n = count_jobs_mentioning_any_skill(jobs, [s1, s2])
-        pct_u = round(100 * union_n / total, 1) if total else 0.0
-        dl = domain_display_label(domain)
-        insight_line = (
-            f"In this {total}-listing {dl.lower()} sample, roles mentioning {s1} or {s2} "
-            f"cover ~{pct_u}% of postings—prioritizing both often widens similar opportunities fastest."
+            "Few concrete tools surfaced from this batch—try broader role keywords to sharpen demand signals."
         )
     else:
-        s1 = top[0]["skill"]
-        p = top[0]["pct_of_jobs"]
-        insight_line = f"Strongest repeated signal in this sample: {s1} (~{p}% of postings)."
+        insight_line = _concise_opportunity_line(domain, jobs, top, total)
 
     return {
         "domain_key": domain,
         "domain_label": domain_display_label(domain),
+        "market_context_line": domain_market_subtitle(domain),
         "total_jobs_analyzed": total,
         "top_skills": top[:5],
         "insight_line": insight_line.strip(),

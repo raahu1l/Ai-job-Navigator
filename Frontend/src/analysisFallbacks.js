@@ -73,6 +73,27 @@ function normStrList(arr) {
   return arr.filter((x) => typeof x === "string" && x.trim());
 }
 
+function normBestWebsites(arr) {
+  if (!Array.isArray(arr)) {
+    return [];
+  }
+  const out = [];
+  for (const item of arr) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    const url = typeof item.url === "string" ? item.url.trim() : "";
+    if (name && url) {
+      out.push({ name, url });
+    }
+    if (out.length >= 2) {
+      break;
+    }
+  }
+  return out;
+}
+
 /** Prefer new roadmap_steps; fall back to legacy steps. */
 function normalizeRoadmapSteps(source) {
   if (!Array.isArray(source)) {
@@ -103,6 +124,7 @@ function normalizeRoadmapSteps(source) {
       resources: fallbackRes,
       youtube_channels: normStrList(s?.youtube_channels),
       tools_and_apps: normStrList(s?.tools_and_apps),
+      best_websites: normBestWebsites(s?.best_websites),
       platform: typeof s?.platform === "string" ? s.platform : "",
       estimated_time: est,
       time: est,
@@ -189,7 +211,7 @@ export function buildMinimalPlaceholderResults(userSkills) {
 
 export function isExploratoryResults(list) {
   if (!Array.isArray(list) || list.length === 0) {
-    return true;
+    return false;
   }
   return list.every((r) => (Number(r.match_score) || 0) < 1);
 }

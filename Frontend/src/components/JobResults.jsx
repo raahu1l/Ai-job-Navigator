@@ -1,5 +1,11 @@
 import { formatMatchPercent } from "../analysisFallbacks";
 
+const STRONG_MATCH_LINES = [
+  "Your current skill set aligns strongly with this role.",
+  "You already meet the primary requirements for this opportunity.",
+  "This role closely matches your existing skills.",
+];
+
 function mergeRequiredSkills(job, matched, missing) {
   const fromApi = Array.isArray(job.required_skills) ? job.required_skills : [];
   if (fromApi.length > 0) {
@@ -149,7 +155,7 @@ function JobResults({ results, onGetLearningPath }) {
             ) : (
               hasRequirements && (
               <p className="job-card__match-well" role="status">
-                You already match this role on the extracted requirements.
+                {STRONG_MATCH_LINES[index % STRONG_MATCH_LINES.length]}
               </p>
               )
             )}

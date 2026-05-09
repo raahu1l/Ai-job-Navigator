@@ -14,6 +14,17 @@ function firstLine(text, maxLen = 140) {
   return `${line.slice(0, maxLen - 1)}…`;
 }
 
+function websiteHref(url) {
+  const u = typeof url === "string" ? url.trim() : "";
+  if (!u) {
+    return "";
+  }
+  if (/^https?:\/\//i.test(u)) {
+    return u;
+  }
+  return `https://${u}`;
+}
+
 function mergeUniqueChips(tools, resources, max) {
   const merged = [];
   const seen = new Set();
@@ -124,6 +135,7 @@ function LearningPath({
             const ytChips = (step.youtube_channels || [])
               .filter((x) => typeof x === "string" && x.trim())
               .slice(0, MAX_YT);
+            const webSites = Array.isArray(step.best_websites) ? step.best_websites : [];
             const projectLine = firstLine(step.practice_project, 220);
 
             return (
@@ -165,6 +177,28 @@ function LearningPath({
                         </span>
                       ))}
                     </div>
+                  </section>
+                )}
+                {webSites.length > 0 && (
+                  <section className="lp-roadstep-section lp-roadstep-section--tight">
+                    <span className="lp-snippet-label">Best websites</span>
+                    <ul className="lp-website-list">
+                      {webSites.map((w) => {
+                        const href = websiteHref(w.url);
+                        return (
+                          <li key={`${w.name}-${href}`}>
+                            <a
+                              className="lp-website-link"
+                              href={href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {w.name}
+                            </a>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </section>
                 )}
                 {!resChips.length && step.resource && (

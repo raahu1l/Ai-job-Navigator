@@ -4,6 +4,13 @@ from pathlib import Path
 
 from job_fetcher import fetch_jobs
 from skill_domain import (
+    DOMAIN_DESIGN,
+    DOMAIN_FINANCE,
+    DOMAIN_HR,
+    DOMAIN_MARKETING,
+    DOMAIN_SALES,
+    DOMAIN_TECH,
+    DOMAIN_GENERAL,
     detect_skill_domain,
     domain_job_search_query,
     prioritize_trending_for_domain,
@@ -33,6 +40,58 @@ _USER_SKILL_ALIAS_GROUPS: tuple[frozenset[str], ...] = (
     frozenset({"machine learning", "ml"}),
     frozenset({"artificial intelligence", "ai"}),
 )
+
+# Title hints that a role plausibly belongs to the user's domain (loose, for gating noise).
+_TECH_TITLE_POSITIVE = (
+    "engineer", "developer", "software", "devops", "programmer", "architect",
+    "scientist", "sre", "cloud", "backend", "frontend", "full stack", "fullstack",
+    "java", "python", "react", "node", "data engineer", "data scientist",
+    "machine learning", "ml engineer", "ai engineer", "platform", "product",
+    "technical", "dba", "database", "ios", "android", "qa", "quality assurance",
+    "test automation", "security engineer", "network engineer", "support engineer",
+    "systems", "it ", " tech", "digital", "analyst", "stack", "kubernetes",
+    "docker", "aws", "azure", "scrum", "agile", "product manager", "program manager",
+    "project manager",
+)
+_TECH_TITLE_CONFLICT = (
+    "soil", "agricultur", "agronom", "dairy", "poultry", "livestock", "fertilizer",
+    "farm ", "farming", "veterinar", "crop ", "tractor", "irrigation", "husbandry",
+)
+# Drop obvious non-professional-office verticals unless the user already matches strongly.
+_NOISE_TITLE_MARKERS = (
+    "soil ", "soil market", "agricultur", "agronom", "poultry", "fertilizer",
+    "livestock", "dairy farm", "crop science", "tractor", "irrigation",
+)
+_MARKETING_TITLE_POSITIVE = (
+    "marketing", "brand", "seo", "sem", "growth", "content", "digital", "campaign",
+    "social media", "crm", "communications", "copywriter", "performance marketing",
+    "demand gen", "product marketing", "b2b marketing",
+)
+_MARKETING_TITLE_CONFLICT = (
+    "software engineer", "backend developer", "devops engineer", "java developer",
+    "embedded engineer", "kernel", "firmware", "sre ",
+)
+_FINANCE_TITLE_POSITIVE = (
+    "finance", "financial", "accountant", "accounting", "fp&a", "fp a", "treasury",
+    "audit", "controller", "cfo", "investment", "risk", "tax", "payroll", "bookkeeper",
+)
+_FINANCE_TITLE_CONFLICT = (
+    "software engineer", "frontend developer", "devops", "embedded", "mechanical engineer",
+)
+_SALES_TITLE_POSITIVE = (
+    "sales", "business development", "account executive", "account manager", "bdr", "sdr",
+    "revenue", "commercial", "enterprise sales", "inside sales",
+)
+_HR_TITLE_POSITIVE = (
+    "human resources", "hr ", "hrbp", "people ", "talent", "recruiter", "recruitment",
+)
+_DESIGN_TITLE_POSITIVE = (
+    "designer", "ux", "ui", "user experience", "figma", "visual", "creative", "product design",
+)
+
+_MIN_COMPOSITE_SCORE = 10.0
+_HIT_BONUS_CAP = 30.0
+_HIT_BONUS_PER_SKILL = 10.0
 
 
 def expand_user_skill_match_keys(user_skills: list) -> set[str]:
@@ -81,10 +140,107 @@ def _required_skills_from_job(job: dict) -> list[str]:
     return filter_skill_list(out)
 
 
-def _analyze_live_jobs(user_skill_keys: set[str], job_results: list) -> list:
-    results = []
-    for job in job_results[:50]:
+def _job_text_blob(job: dict) -> str:
+    return f"{job.get('title', '')} {job.get('description', '')}".lower()
+
+
+def _skill_mentioned_in_blob_lower(skill_raw: str, blob_lower: str) -> bool:
+    s = str(skill_raw).strip().lower()
+    if len(s) < 2:
+        return False
+    if len(s) <= 3:
+        return bool(re.search(rf"(?<![a-z0-9]){re.escape(s)}(?![a-z0-9])", blob_lower))
+    return s in blob_lower
+
+
+def _user_skill_presence_hits(user_skills: list[str], blob_lower: str) -> int:
+    """Count how many distinct user skills appear in title+description (substring / word-safe)."""
+    hits = 0
+    for raw in user_skills:
+        if _skill_mentioned_in_blob_lower(raw, blob_lower):
+            hits += 1
+    return hits
+
+
+def _title_lower(job: dict) -> str:
+    return str(job.get("title") or "").lower()
+
+
+def _should_drop_offtopic(
+    domain: str,
+    title_l: str,
+    *,
+    user_hits: int,
+    match_score: float,
+    n_matched: int,
+) -> bool:
+    """Drop obvious cross-domain noise when there is no skill signal."""
+    if user_hits >= 1 or n_matched >= 1 or match_score >= 15:
+        return False
+
+    if domain == DOMAIN_TECH:
+        if any(c in title_l for c in _TECH_TITLE_CONFLICT):
+            return True
+        if not any(p in title_l for p in _TECH_TITLE_POSITIVE):
+            return True
+
+    if domain == DOMAIN_MARKETING:
+        if any(c in title_l for c in _MARKETING_TITLE_CONFLICT) and not any(
+            p in title_l for p in _MARKETING_TITLE_POSITIVE
+        ):
+            return True
+        if not any(p in title_l for p in _MARKETING_TITLE_POSITIVE):
+            return True
+
+    if domain == DOMAIN_FINANCE:
+        if any(c in title_l for c in _FINANCE_TITLE_CONFLICT) and not any(
+            p in title_l for p in _FINANCE_TITLE_POSITIVE
+        ):
+            return True
+        if not any(p in title_l for p in _FINANCE_TITLE_POSITIVE):
+            return True
+
+    if domain == DOMAIN_SALES:
+        if not any(p in title_l for p in _SALES_TITLE_POSITIVE):
+            return True
+
+    if domain == DOMAIN_HR:
+        if not any(p in title_l for p in _HR_TITLE_POSITIVE):
+            return True
+
+    if domain == DOMAIN_DESIGN:
+        if not any(p in title_l for p in _DESIGN_TITLE_POSITIVE):
+            return True
+
+    # Mixed / general: only remove hard tech conflict titles with zero signal
+    if domain == DOMAIN_GENERAL:
+        if any(c in title_l for c in _TECH_TITLE_CONFLICT) and user_hits == 0 and match_score < 5:
+            return True
+
+    return False
+
+
+def _analyze_live_jobs(
+    user_skills_list: list[str],
+    user_skill_keys: set[str],
+    job_results: list,
+) -> list:
+    user_domain = detect_skill_domain(user_skills_list)
+    results: list[dict] = []
+
+    for job in job_results:
+        if not isinstance(job, dict):
+            continue
+
+        blob = _job_text_blob(job)
         required_skills = _required_skills_from_job(job)
+        if not required_skills:
+            inferred: list[str] = []
+            for s in user_skills_list:
+                if _skill_mentioned_in_blob_lower(s, blob):
+                    inferred.append(s)
+            required_skills = filter_skill_list(inferred)[:12]
+
         matched_skills: list[str] = []
         missing_skills: list[str] = []
 
@@ -102,26 +258,55 @@ def _analyze_live_jobs(user_skill_keys: set[str], job_results: list) -> list:
             if missing_skills:
                 match_score = round((len(matched_skills) / total_req) * 100, 2) if total_req else 0.0
             else:
-                # 100% only when nothing is missing vs extracted requirements.
                 match_score = 100.0
+
+        user_hits = _user_skill_presence_hits(user_skills_list, blob)
+        title_l = _title_lower(job)
+
+        # No extractable requirements and no evidence user skills appear → skip
+        if not required_skills and user_hits == 0:
+            continue
+
+        hit_bonus = min(_HIT_BONUS_CAP, _HIT_BONUS_PER_SKILL * float(user_hits))
+        composite = min(100.0, match_score + hit_bonus)
+
+        if composite < _MIN_COMPOSITE_SCORE and len(matched_skills) == 0 and user_hits == 0:
+            continue
+
+        if _should_drop_offtopic(
+            user_domain,
+            title_l,
+            user_hits=user_hits,
+            match_score=match_score,
+            n_matched=len(matched_skills),
+        ):
+            continue
+
+        if any(m in title_l for m in _NOISE_TITLE_MARKERS):
+            if user_hits < 1 and len(matched_skills) < 1 and match_score < 28:
+                continue
+
+        display_score = round(composite, 2)
 
         results.append(
             {
                 "job_id": str(job.get("job_id", "")),
                 "title": str(job.get("title") or "Role"),
                 "company": str(job.get("company") or "Unknown"),
-                "match_score": match_score,
+                "match_score": display_score,
                 "required_skills": required_skills,
                 "matched_skills": matched_skills,
                 "missing_skills": missing_skills,
             }
         )
+
     results.sort(key=lambda item: item["match_score"], reverse=True)
     return [_sanitize_job_result(r) for r in results]
 
 
 def analyze(user_skills: list, job_results: list | None = None) -> list:
-    user_skill_keys = expand_user_skill_match_keys(user_skills if isinstance(user_skills, list) else [])
+    skills_list = [str(s).strip() for s in (user_skills if isinstance(user_skills, list) else []) if str(s).strip()]
+    user_skill_keys = expand_user_skill_match_keys(skills_list)
     if not user_skill_keys:
         return []
 
@@ -130,7 +315,7 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
         n = len(job_results)
         print("Using LIVE Adzuna analysis")
         print(f"  (live job_results: {n})")
-        return _analyze_live_jobs(user_skill_keys, job_results)
+        return _analyze_live_jobs(skills_list, user_skill_keys, job_results)
 
     print("Using FALLBACK static dataset")
     results = []
@@ -179,11 +364,8 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
 
     results.sort(key=lambda item: item["match_score"], reverse=True)
     if results:
-        # Cap UI payload on static corpus (can be large); live path stays aligned with fetched batch size.
         return [_sanitize_job_result(r) for r in results[:40]]
 
-    # Fallback: if none of the entered skills match the dataset vocabulary,
-    # still return jobs so the UI can show actionable missing-skill guidance.
     fallback = []
     for job in JOBS[:10]:
         job_skills = filter_skill_list(
@@ -232,7 +414,6 @@ def get_trending(top_n: int = 15, user_skills: list | None = None) -> list:
         )
         return trending
 
-    # No whitelist hits — try raw static JSON titles/descriptions only (no Kaggle categories)
     print("Trending: Fallback dataset activated (local JSON titles for whitelist enrichment)")
     trending = trending_from_jobs(JOBS, top_n=top_n * 2)
     trending = prioritize_trending_for_domain(trending, domain, top_n)

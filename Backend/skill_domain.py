@@ -3,6 +3,7 @@ Infer user career domain from skill strings for market/trending/job-fetch bias.
 """
 from __future__ import annotations
 
+import re
 from collections import Counter
 
 
@@ -31,6 +32,40 @@ DOMAIN_DISPLAY_LABELS: dict[str, str] = {
 
 def domain_display_label(domain: str) -> str:
     return DOMAIN_DISPLAY_LABELS.get(domain, DOMAIN_DISPLAY_LABELS[DOMAIN_GENERAL])
+
+
+# Short context line for demand UI (not a "skill" label).
+DOMAIN_MARKET_CONTEXT_SUBTITLE: dict[str, str] = {
+    DOMAIN_TECH: "Based on live software & data hiring signals",
+    DOMAIN_FINANCE: "Based on live finance & analyst hiring signals",
+    DOMAIN_SALES: "Based on live sales hiring signals",
+    DOMAIN_MARKETING: "Based on live marketing hiring signals",
+    DOMAIN_HR: "Based on live people & recruiting hiring signals",
+    DOMAIN_DESIGN: "Based on live design hiring signals",
+    DOMAIN_GENERAL: "Based on live hiring signals in your search",
+}
+
+
+def domain_market_subtitle(domain: str) -> str:
+    return DOMAIN_MARKET_CONTEXT_SUBTITLE.get(
+        domain, DOMAIN_MARKET_CONTEXT_SUBTITLE[DOMAIN_GENERAL]
+    )
+
+
+# Noun phrase for opportunity lines (avoid "sample" / "listing" wording).
+DOMAIN_ROLE_MATCH_NOUN: dict[str, str] = {
+    DOMAIN_TECH: "technical",
+    DOMAIN_FINANCE: "analyst and finance",
+    DOMAIN_SALES: "sales",
+    DOMAIN_MARKETING: "marketing",
+    DOMAIN_HR: "people-ops",
+    DOMAIN_DESIGN: "design",
+    DOMAIN_GENERAL: "matching",
+}
+
+
+def domain_role_match_noun(domain: str) -> str:
+    return DOMAIN_ROLE_MATCH_NOUN.get(domain, DOMAIN_ROLE_MATCH_NOUN[DOMAIN_GENERAL])
 
 
 # (domain, tuple of lowercase substrings to match against each user skill)
@@ -127,6 +162,102 @@ def detect_skill_domain(user_skills: list | None) -> str:
 
 def domain_job_search_query(domain: str) -> str:
     return DOMAIN_JOB_SEARCH_QUERY.get(domain, DOMAIN_JOB_SEARCH_QUERY[DOMAIN_GENERAL])
+
+
+# Role-oriented Adzuna "what" terms (broaden recall beyond raw skill tokens alone).
+_DOMAIN_ROLE_BOOST: dict[str, str] = {
+    DOMAIN_TECH: (
+        "software engineer backend developer full stack java python devops engineer "
+        "cloud engineer data engineer site reliability"
+    ),
+    DOMAIN_FINANCE: (
+        "financial analyst accountant fp&a finance analyst risk analyst "
+        "treasury audit modeling"
+    ),
+    DOMAIN_SALES: (
+        "sales executive account manager business development sdr bdr "
+        "account executive revenue"
+    ),
+    DOMAIN_MARKETING: (
+        "digital marketing marketing manager seo specialist growth marketing "
+        "content strategist crm marketing performance marketing"
+    ),
+    DOMAIN_HR: (
+        "human resources recruiter talent acquisition people partner hr business partner "
+        "people operations"
+    ),
+    DOMAIN_DESIGN: (
+        "ux designer ui designer product designer visual designer figma "
+        "user experience creative designer"
+    ),
+    DOMAIN_GENERAL: (
+        "specialist analyst coordinator project manager operations associate"
+    ),
+}
+
+
+def domain_role_search_boost(domain: str) -> str:
+    return _DOMAIN_ROLE_BOOST.get(domain, _DOMAIN_ROLE_BOOST[DOMAIN_GENERAL])
+
+
+def normalize_user_skills_list(raw_skills: list | None, keywords_fallback: str = "") -> list[str]:
+    """Flatten skills from UI or comma-separated keywords; preserves order, dedupes."""
+    out: list[str] = []
+    seen: set[str] = set()
+    if raw_skills and isinstance(raw_skills, list):
+        for item in raw_skills:
+            for part in str(item).replace(";", ",").split(","):
+                s = part.strip()
+                if not s:
+                    continue
+                k = normalize_skill_key(s)
+                if k and k not in seen:
+                    seen.add(k)
+                    out.append(s)
+    elif keywords_fallback and str(keywords_fallback).strip():
+        raw = str(keywords_fallback).strip()
+        if "," in raw or ";" in raw:
+            chunks = re.split(r"[,;]+", raw)
+        else:
+            chunks = raw.split()
+        for part in chunks:
+            s = part.strip()
+            if not s:
+                continue
+            k = normalize_skill_key(s)
+            if k and k not in seen:
+                seen.add(k)
+                out.append(s)
+    return out
+
+
+def build_job_search_queries(user_skills: list[str]) -> list[str]:
+    """
+    Build 1–2 Adzuna `what` strings: skill-heavy + domain role boost for recall.
+    Keeps strings within practical API length limits.
+    """
+    skills = normalize_user_skills_list(user_skills, "")
+    if not skills:
+        return [domain_job_search_query(DOMAIN_GENERAL)]
+
+    domain = detect_skill_domain(skills)
+    role_boost = domain_role_search_boost(domain)
+    # Up to 10 skill tokens (user-typed + suggestions all treated the same)
+    skill_part = " ".join(skills[:10])
+
+    q_primary = f"{skill_part} {role_boost}".strip()
+    q_primary = " ".join(q_primary.split())[:220]
+
+    # Second query: domain job family + top skills (catches postings that omit stack keywords)
+    domain_base = domain_job_search_query(domain)
+    q_secondary = f"{domain_base} {' '.join(skills[:6])}".strip()
+    q_secondary = " ".join(q_secondary.split())[:220]
+
+    queries: list[str] = []
+    for q in (q_primary, q_secondary):
+        if q and q not in queries:
+            queries.append(q)
+    return queries[:2]
 
 
 def domain_market_context(domain: str) -> str:

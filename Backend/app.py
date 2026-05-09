@@ -4,7 +4,8 @@ from matcher import analyze, get_trending
 from agents import extract_skills_from_jd, generate_learning_path, analyze_market_demand
 from market_insights import build_skill_demand_dashboard
 from crew import SkillNavCrew
-from job_fetcher import fetch_jobs
+from job_fetcher import fetch_jobs_multi
+from skill_domain import build_job_search_queries, normalize_user_skills_list
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": [
@@ -104,7 +105,13 @@ def fetch_jobs_route():
     payload = request.get_json(silent=True) or {}
     keywords = payload.get("keywords", "")
     location = payload.get("location", "india")
-    result = fetch_jobs(keywords, location)
+    skills_raw = payload.get("skills")
+    skills_list = normalize_user_skills_list(
+        skills_raw if isinstance(skills_raw, list) else None,
+        str(keywords) if keywords else "",
+    )
+    queries = build_job_search_queries(skills_list)
+    result = fetch_jobs_multi(queries, location)
     out = {
         "jobs": result["jobs"],
         "count": result["count"],

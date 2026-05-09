@@ -59,7 +59,7 @@ def _build_debug(
     }
 
 
-def fetch_jobs(keywords: str, location: str = "india", results: int = 20) -> dict:
+def fetch_jobs(keywords: str, location: str = "india", results: int = 50) -> dict:
     """
     Fetch live jobs from Adzuna API.
     Falls back to static jobs.json only on real failures (missing keys, HTTP errors,
@@ -237,6 +237,63 @@ def _fallback_payload(reason: str = "", debug_extra: dict | None = None) -> dict
         credentials_present=extra.get("credentials_present", False),
     )
     return {"jobs": jobs, "source": "fallback", "count": count, "debug": dbg}
+
+
+def fetch_jobs_multi(
+    queries: list[str],
+    location: str = "india",
+    results_per_query: int = 50,
+) -> dict:
+    """
+    Run multiple Adzuna searches and merge unique jobs by job_id (improves recall).
+    Falls back like fetch_jobs if no live query succeeds.
+    """
+    clean_queries = []
+    for q in queries or []:
+        s = (q or "").strip()
+        if s and s not in clean_queries:
+            clean_queries.append(s)
+    if not clean_queries:
+        return fetch_jobs("", location, results=results_per_query)
+
+    merged: list[dict] = []
+    seen: set[str] = set()
+    last_non_live: dict | None = None
+    debug_parts: list[dict] = []
+
+    for q in clean_queries[:3]:
+        result = fetch_jobs(q, location, results=results_per_query)
+        if result.get("source") != "adzuna":
+            last_non_live = result
+            continue
+        dbg = result.get("debug")
+        if isinstance(dbg, dict):
+            debug_parts.append(dbg)
+        for job in result.get("jobs") or []:
+            jid = str(job.get("job_id") or "")
+            if jid and jid not in seen:
+                seen.add(jid)
+                merged.append(job)
+
+    if merged:
+        primary_dbg = debug_parts[0] if debug_parts else _build_debug(
+            source="adzuna",
+            credentials_present=True,
+        )
+        return {
+            "jobs": merged,
+            "count": len(merged),
+            "source": "adzuna",
+            "debug": {
+                **primary_dbg,
+                "merged_queries": len(debug_parts),
+                "merged_unique_jobs": len(merged),
+            },
+        }
+
+    if last_non_live:
+        return last_non_live
+    return fetch_jobs(clean_queries[0], location, results=results_per_query)
 
 
 def get_job_description(job: dict) -> str:

@@ -68,6 +68,17 @@ def _sanitize_learning_path_payload(data: dict) -> dict:
         for lk in ("resources", "youtube_channels", "tools_and_apps"):
             if lk in row:
                 row[lk] = _as_str_list(row[lk])
+        bw = row.get("best_websites")
+        sites: list[dict] = []
+        if isinstance(bw, list):
+            for item in bw[:2]:
+                if not isinstance(item, dict):
+                    continue
+                name = item.get("name")
+                url = item.get("url")
+                if isinstance(name, str) and name.strip() and isinstance(url, str) and url.strip():
+                    sites.append({"name": name.strip(), "url": url.strip()})
+        row["best_websites"] = sites
         new_steps.append(row)
     out["roadmap_steps"] = new_steps
     out["steps"] = new_steps
@@ -135,11 +146,19 @@ Return ONLY JSON (no markdown). Use exactly these keys:
       "resources": ["freeCodeCamp X", "official docs topic", "Khan Academy / Mode / etc."],
       "youtube_channels": ["named channel relevant to skill", "named playlist"],
       "tools_and_apps": ["tool or site e.g. pgAdmin / Excel / Salesforce"],
+      "best_websites": [
+        {"name": "Authoritative site name", "url": "https://…"},
+        {"name": "Second high-quality site", "url": "https://…"}
+      ],
       "progression": "beginner milestones → intermediate: list 4-7 concrete checkpoints",
       "practice_project": "one small shipped artifact e.g. build X that proves the skill"
     }
   ]
 }
+
+Rules for best_websites: EXACTLY 1-2 entries. Must be well-known official or academy sites
+(e.g. react.dev, sqlbolt.com, mode.com SQL tutorial, HubSpot Academy, Google Skillshop, Figma Learn).
+NO generic blogs or SEO spam. URLs must be real https links.
 """
 
 
@@ -223,6 +242,7 @@ RULES:
 4) resources / youtube_channels / tools_and_apps: name specific known platforms (no vague tutorials).
 5) progression must read like a syllabus (Beginner → Intermediate), not motivational bullet fluff.
 6) practice_project must be a single concrete deliverable (dataset or repo scale).
+7) best_websites: 1-2 only; skill-specific; legitimate domains; full https URLs.
 
 FACTS_FROM_LIVE (counts from extracted titles/descriptions of listings provided by the API):
 {facts_for_llm}
@@ -281,6 +301,21 @@ estimated_time TOTAL should logically align with SUM of realistic per-step durat
         )
 
 
+def _live_job_title_sample(jobs: list, limit: int = 14) -> str:
+    titles = []
+    for j in jobs or []:
+        if not isinstance(j, dict):
+            continue
+        t = str(j.get("title") or "").strip()
+        if t and t not in titles:
+            titles.append(t)
+        if len(titles) >= limit:
+            break
+    if not titles:
+        return "(no titles in payload)"
+    return "; ".join(titles)
+
+
 def analyze_market_demand(
     trending_skills: list,
     user_skills: list,
@@ -294,22 +329,33 @@ def analyze_market_demand(
     live_block = ""
     if isinstance(live_jobs, list) and len(live_jobs) > 0:
         dv = skill_demand_from_jobs(live_jobs)
+        titles_line = _live_job_title_sample(live_jobs)
         live_block = f"""
-FACTS_EXTRACTED_FROM_LIVE_LISTINGS ({dv['total_jobs']} jobs; whitelist scan of titles/descriptions):
+LIVE_ADZUNA_BATCH ({dv['total_jobs']} roles; skills extracted from real titles + descriptions):
 {dv['facts_block']}
-Do NOT state percentages unless they derive from counts above."""
+
+VERBATIM_ROLE_TITLES (patterns / seniority / stacks employers actually advertise):
+{titles_line}
+
+RULES FOR COPY:
+- market_summary MUST cite at least one concrete skill or pairing from FACTS above (e.g. "SQL and Excel").
+- Name hiring patterns you can infer from ROLE_TITLES + FACTS (e.g. analyst vs engineer mix), not generic career advice.
+- Forbidden: vague motivation, "employers value adaptability", "technology is important" without naming tools from FACTS.
+- If FACTS are thin, say what is missing in one short clause—do not invent survey statistics.
+- Do NOT state percentages unless they appear in FACTS lines above."""
     else:
-        live_block = "No live postings payload for this analysis — rely on trending list + domain only."
+        live_block = """No live job payload in this request.
+Use Trending_skill_labels + User_skills + domain only. State clearly that signals are keyword-level, not from the current live batch.
+Avoid generic filler—tie sentences to the user's stated skills and the trending labels only."""
 
     prompt = f"""
-You are a job market analyst.
-Ground claims in FACTS_EXTRACTED when present; otherwise be conservative — no fabricated survey stats.
+You are a job market analyst writing copy for a live job-matching product.
 
 Return ONLY JSON, no markdown:
 {{
-  "market_summary": "2 concise sentences anchored to FACTS/TRENDS",
-  "your_strength": "one sentence from user_skills vs trend context",
-  "biggest_opportunity": "skill from FACTS_HIGH_DEMAND_or_trend_or_user_gap",
+  "market_summary": "Exactly 2 short sentences. When LIVE data exists: reference real extracted skills and recurring role-title patterns. When not: one sentence on keyword trends + one on limitations.",
+  "your_strength": "One sentence: how user_skills intersect what employers show in this context (no fluff).",
+  "biggest_opportunity": "One concrete skill or pairing to deepen (must echo FACTS or trending list; never a platitude).",
   "demand_trend": "one of growing/stable/declining"
 }}
 
@@ -324,7 +370,7 @@ User_skills: {user_skills}
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
-        max_tokens=450,
+        max_tokens=520,
     )
 
     text = extract_json(response.choices[0].message.content)
@@ -333,9 +379,33 @@ User_skills: {user_skills}
         return json.loads(text)
     except Exception:
         hints = DOMAIN_TRENDING_HINTS.get(domain, DOMAIN_TRENDING_HINTS[DOMAIN_GENERAL])
+        if isinstance(live_jobs, list) and len(live_jobs) > 0:
+            dv = skill_demand_from_jobs(live_jobs)
+            fb = (dv.get("facts_block") or "").strip()
+            ts = _live_job_title_sample(live_jobs, 8)
+            return {
+                "market_summary": (
+                    f"Live batch signals: {fb[:320]}{'…' if len(fb) > 320 else ''} "
+                    f"Role titles lean toward: {ts[:200]}{'…' if len(ts) > 200 else ''}"
+                ).strip(),
+                "your_strength": (
+                    "Cross-check your listed skills against the frequency lines above to prioritize proof points."
+                ),
+                "biggest_opportunity": (
+                    (dv.get("top_skills") or [{}])[0].get("skill")
+                    if dv.get("top_skills")
+                    else (trending_skills[0] if trending_skills else hints[0])
+                ),
+                "demand_trend": "growing",
+            }
         return {
-            "market_summary": "Market snapshots without live payloads are directional only.",
-            "your_strength": "Your declared skills anchor your positioning.",
+            "market_summary": (
+                "No live batch was attached to this response—treat trending labels as directional keyword demand only, "
+                "not employer-verified counts for your search."
+            ),
+            "your_strength": (
+                f"Your stated skills ({', '.join(user_skills[:5]) or '—'}) frame where to focus proof and keyword alignment."
+            ),
             "biggest_opportunity": trending_skills[0] if trending_skills else hints[0],
             "demand_trend": "growing",
         }

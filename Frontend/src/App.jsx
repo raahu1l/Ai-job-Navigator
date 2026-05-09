@@ -11,7 +11,6 @@ import {
   DEFAULT_MARKET_ANALYSIS,
   FALLBACK_TRENDING_CHART,
   normalizeMarketAnalysis,
-  buildFallbackResultsFromJobs,
   buildMinimalPlaceholderResults,
   isExploratoryResults,
 } from "./analysisFallbacks";
@@ -134,6 +133,7 @@ function App() {
         },
         body: JSON.stringify({
           keywords: skills.join(" "),
+          skills,
           location: location,
         }),
       });
@@ -199,10 +199,7 @@ function App() {
       }
       let nextResults = Array.isArray(data) ? data : [];
 
-      if (nextResults.length === 0 && jobs.length > 0) {
-        nextResults = buildFallbackResultsFromJobs(jobs, skills);
-      }
-      if (nextResults.length === 0) {
+      if (nextResults.length === 0 && jobs.length === 0) {
         nextResults = buildMinimalPlaceholderResults(skills);
       }
 
@@ -255,8 +252,7 @@ function App() {
     } catch (err) {
       setError(err.message || "Something went wrong");
       setActiveAgent(-1);
-      const sk = lastSkillsRef.current || [];
-      setResults(buildMinimalPlaceholderResults(sk));
+      setResults([]);
       setMarketAnalysis({ ...DEFAULT_MARKET_ANALYSIS });
       setRoadmapVisible(false);
       setLearningPath(null);
@@ -430,6 +426,38 @@ function App() {
                 </div>
               )}
 
+              {!isLoading &&
+                showResultsSection &&
+                liveJobs.length > 0 &&
+                results.length === 0 && (
+                  <div className="no-strong-matches-banner" role="status">
+                    <p>
+                      No strong role matches found for your current skills in{" "}
+                      <strong>
+                        {location.replace(/^\w/, (c) => c.toUpperCase())}
+                      </strong>
+                      .
+                    </p>
+                    <p className="no-strong-matches-banner__sub">
+                      Try expanding your skills, widening location, or searching role titles closer to your
+                      target (e.g. backend engineer, data engineer).
+                    </p>
+                  </div>
+                )}
+
+              {!isLoading &&
+                showResultsSection &&
+                liveJobs.length === 0 &&
+                jobFetchMeta.source === "adzuna" && (
+                  <div className="no-strong-matches-banner" role="status">
+                    <p>No live job postings were returned for this search.</p>
+                    <p className="no-strong-matches-banner__sub">
+                      Adjust keywords or location—Adzuna sometimes returns sparse results for very narrow
+                      queries.
+                    </p>
+                  </div>
+                )}
+
               {(jobFetchMeta.source != null || jobFetchMeta.count > 0) && (
                 <div className="live-data-row" role="status">
                   <p className="live-data-row__primary">
@@ -444,21 +472,30 @@ function App() {
                         ? "Curated sample listings — comparable matching experience"
                         : "SkillNav"}
                   </p>
-                  {listingStats.ranked > 0 && (
+                  {listingStats.fetched > 0 && (
                     <p className="live-data-row__tertiary">
-                      {listingStats.fetched > listingStats.ranked ? (
-                        <>
-                          Showing{" "}
-                          <span className="live-data-row__accent">{listingStats.ranked}</span> ranked{" "}
-                          match{listingStats.ranked === 1 ? "" : "es"} from{" "}
-                          <span className="live-data-row__accent">{listingStats.fetched}</span> postings
-                          scored in this run
-                        </>
+                      {listingStats.ranked > 0 ? (
+                        listingStats.fetched > listingStats.ranked ? (
+                          <>
+                            Showing{" "}
+                            <span className="live-data-row__accent">{listingStats.ranked}</span> ranked{" "}
+                            match{listingStats.ranked === 1 ? "" : "es"} from{" "}
+                            <span className="live-data-row__accent">{listingStats.fetched}</span> postings
+                            scored in this run
+                          </>
+                        ) : (
+                          <>
+                            Showing{" "}
+                            <span className="live-data-row__accent">{listingStats.ranked}</span> ranked role
+                            match{listingStats.ranked === 1 ? "" : "es"} for this analysis
+                          </>
+                        )
                       ) : (
                         <>
-                          Showing{" "}
-                          <span className="live-data-row__accent">{listingStats.ranked}</span> ranked role
-                          match{listingStats.ranked === 1 ? "" : "es"} for this analysis
+                          <span className="live-data-row__accent">0</span> roles met the relevance threshold
+                          from{" "}
+                          <span className="live-data-row__accent">{listingStats.fetched}</span> posting
+                          {listingStats.fetched === 1 ? "" : "s"} analyzed
                         </>
                       )}
                     </p>
@@ -503,7 +540,7 @@ function App() {
       </main>
 
       <footer className="footer">
-        Built for AMD Developer Hackathon · lablab.ai 2025
+        Built for AMD Developer Hackathon 2026 · lablab.ai
       </footer>
     </div>
   );
