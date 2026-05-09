@@ -3,6 +3,7 @@ from agents import (
     generate_learning_path,
     analyze_market_demand
 )
+from skill_filters import filter_skill_list
 import json
 
 
@@ -101,7 +102,7 @@ class SkillNavCrew:
         all_missing = []
         for job in job_results[:3]:
             all_missing.extend(job.get("missing_skills", []))
-        unique_missing = list(set(all_missing))
+        unique_missing = filter_skill_list(all_missing)
         pipeline_log[-1]["status"] = "completed"
         pipeline_log[-1]["output"] = f"Identified {len(unique_missing)} unique skill gaps"
 
@@ -112,7 +113,7 @@ class SkillNavCrew:
             "status": "running"
         })
         market_analysis = analyze_market_demand(
-            trending_skills=[s["skill"] for s in trending_skills[:5]],
+            trending_skills=filter_skill_list([s["skill"] for s in trending_skills[:5]]),
             user_skills=user_skills
         )
         pipeline_log[-1]["status"] = "completed"

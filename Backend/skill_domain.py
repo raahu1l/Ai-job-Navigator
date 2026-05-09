@@ -87,7 +87,7 @@ DOMAIN_TRENDING_HINTS: dict[str, tuple[str, ...]] = {
     DOMAIN_MARKETING: ("Marketing", "SEO", "Analytics", "CRM", "Communication", "Sales"),
     DOMAIN_SALES: ("Sales", "CRM", "Negotiation", "Communication", "Marketing"),
     DOMAIN_HR: ("Recruiting", "Communication", "HR", "Negotiation", "Excel"),
-    DOMAIN_DESIGN: ("UI/UX", "Figma", "Communication", "Marketing", "Research"),
+    DOMAIN_DESIGN: ("UI/UX", "Figma", "Communication", "Marketing", "User Research"),
     DOMAIN_GENERAL: ("Communication", "Excel", "Project Management", "SQL", "Marketing"),
 }
 

@@ -78,7 +78,7 @@ def fetch_jobs(keywords: str, location: str = "india", results: int = 20) -> dic
             return _fallback_payload(reason="empty_after_parse")
 
         count = len(jobs)
-        print(f"Using LIVE Adzuna jobs — {count} jobs fetched")
+        print(f"Using LIVE Adzuna analysis — {count} job(s) fetched")
         return {"jobs": jobs, "source": "adzuna", "count": count}
 
     except req.RequestException as e:
@@ -107,7 +107,7 @@ def _fallback_payload(reason: str = "") -> dict:
     count = len(jobs)
     if reason:
         print(f"Fallback reason: {reason}")
-    print(f"Using FALLBACK static dataset — {count} jobs")
+    print(f"Using FALLBACK static dataset — {count} job(s)")
     return {"jobs": jobs, "source": "fallback", "count": count}
 
 

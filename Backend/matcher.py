@@ -8,7 +8,7 @@ from skill_domain import (
     domain_job_search_query,
     prioritize_trending_for_domain,
 )
-from skill_filters import filter_skill_list
+from skill_filters import filter_skill_list, filter_trending_results, is_blocked_skill
 from technical_trending import extract_technical_skills_from_job, trending_from_jobs
 
 
@@ -18,21 +18,37 @@ with DATA_PATH.open("r", encoding="utf-8") as f:
     JOBS = json.load(f)
 
 
+def _sanitize_job_result(row: dict) -> dict:
+    """Apply global skill filter + dedupe to API job rows."""
+    return {
+        **row,
+        "matched_skills": filter_skill_list(row.get("matched_skills")),
+        "missing_skills": filter_skill_list(row.get("missing_skills")),
+    }
+
+
 def _skills_from_live_job(job: dict) -> list[str]:
     """Skills for scoring: whitelist tech from title/description plus any API-provided tags."""
     found = extract_technical_skills_from_job(job)
     for s in job.get("skills") or []:
         if isinstance(s, str) and s.strip():
             found.add(s.strip())
-    if found:
-        return list(found)
+    merged = filter_skill_list(list(found))
+    if merged:
+        return merged
     title = str(job.get("title") or "")
     words = re.findall(r"[A-Za-z][A-Za-z0-9+.#-]{1,}", title)
     skip = {
         "senior", "junior", "lead", "manager", "director", "remote", "full", "time", "part",
         "the", "and", "for", "with", "our", "global",
     }
-    out = [w for w in words if w.lower() not in skip][:8]
+    out: list[str] = []
+    for w in words:
+        if w.lower() in skip or is_blocked_skill(w):
+            continue
+        out.append(w)
+        if len(out) >= 8:
+            break
     raw = out if out else ["Role-specific requirements"]
     return filter_skill_list(raw) or ["Role-specific requirements"]
 
@@ -64,7 +80,7 @@ def _analyze_live_jobs(user_skill_set: set[str], job_results: list) -> list:
             }
         )
     results.sort(key=lambda item: item["match_score"], reverse=True)
-    return results[:10]
+    return [_sanitize_job_result(r) for r in results[:10]]
 
 
 def analyze(user_skills: list, job_results: list | None = None) -> list:
@@ -72,11 +88,14 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
     if not user_skill_set:
         return []
 
+    # Live payloads from Adzuna (or upstream) must never fall through to static Kaggle categories.
     if isinstance(job_results, list) and len(job_results) > 0:
-        live = _analyze_live_jobs(user_skill_set, job_results)
-        if live:
-            return live
+        n = len(job_results)
+        print("Using LIVE Adzuna analysis")
+        print(f"  (live job_results: {n})")
+        return _analyze_live_jobs(user_skill_set, job_results)
 
+    print("Using FALLBACK static dataset")
     results = []
 
     for job in JOBS:
@@ -118,7 +137,7 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
 
     results.sort(key=lambda item: item["match_score"], reverse=True)
     if results:
-        return results[:10]
+        return [_sanitize_job_result(r) for r in results[:10]]
 
     # Fallback: if none of the entered skills match the dataset vocabulary,
     # still return jobs so the UI can show actionable missing-skill guidance.
@@ -128,14 +147,16 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
             [str(skill).strip() for skill in job.get("skills", []) if str(skill).strip()]
         )
         fallback.append(
-            {
-                "job_id": str(job.get("job_id", "")),
-                "title": job.get("title", ""),
-                "company": job.get("company", ""),
-                "match_score": 0.0,
-                "matched_skills": [],
-                "missing_skills": job_skills,
-            }
+            _sanitize_job_result(
+                {
+                    "job_id": str(job.get("job_id", "")),
+                    "title": job.get("title", ""),
+                    "company": job.get("company", ""),
+                    "match_score": 0.0,
+                    "matched_skills": [],
+                    "missing_skills": job_skills,
+                }
+            )
         )
 
     return fallback
@@ -151,18 +172,27 @@ def get_trending(top_n: int = 15, user_skills: list | None = None) -> list:
     search_q = domain_job_search_query(domain)
     result = fetch_jobs(search_q, "india", results=50)
     jobs = result.get("jobs") or []
+    src = result.get("source", "?")
+    if src == "adzuna":
+        print("Trending: Using LIVE Adzuna analysis")
+    else:
+        print(f"Trending: Using FALLBACK static dataset (fetch source={src})")
+
     trending = trending_from_jobs(jobs, top_n=top_n * 2)
     trending = prioritize_trending_for_domain(trending, domain, top_n)
+    trending = filter_trending_results(trending)
     if trending:
         print(
-            f"Trending skills: {len(trending)} entries (domain={domain}) from job fetch "
-            f"(source={result.get('source', '?')}, jobs={len(jobs)})"
+            f"Trending skills: {len(trending)} entries (domain={domain}) "
+            f"(source={src}, jobs={len(jobs)})"
         )
         return trending
 
-    # No whitelist hits from live/fallback fetch — try local JSON titles (no category fields)
+    # No whitelist hits — try raw static JSON titles/descriptions only (no Kaggle categories)
+    print("Trending: enriching from local static titles (no whitelist hits so far)")
     trending = trending_from_jobs(JOBS, top_n=top_n * 2)
     trending = prioritize_trending_for_domain(trending, domain, top_n)
+    trending = filter_trending_results(trending)
     if trending:
         print(f"Trending skills: fallback static titles only, {len(trending)} entries")
         return trending

@@ -1,30 +1,45 @@
-import {
-  DEFAULT_LEARNING_PATH,
-  normalizeLearningPath,
-} from "../analysisFallbacks";
+import { normalizeLearningPath } from "../analysisFallbacks";
 
-function LearningPath({ learningPath, loading }) {
+function LearningPath({
+  targetRoleLabel,
+  learningPath,
+  loading,
+  errorMessage,
+}) {
   if (loading && !learningPath) {
     return (
       <div className="lp-card lp-card--loading" role="status">
-        <div className="lp-loading-text">Generating roadmap...</div>
+        <div className="lp-loading-text">Generating roadmap…</div>
+        {targetRoleLabel && (
+          <p className="lp-target-line">{targetRoleLabel}</p>
+        )}
       </div>
     );
   }
 
-  const data = normalizeLearningPath(
-    learningPath || DEFAULT_LEARNING_PATH,
-  );
+  if (errorMessage) {
+    return (
+      <div className="lp-card lp-card--error" role="alert">
+        <p className="lp-eyebrow">Learning roadmap</p>
+        {targetRoleLabel && (
+          <p className="lp-target-line lp-target-line--error">{targetRoleLabel}</p>
+        )}
+        <p className="lp-error-text">{errorMessage}</p>
+      </div>
+    );
+  }
+
+  if (!learningPath) {
+    return null;
+  }
+
+  const data = normalizeLearningPath(learningPath);
   const steps = Array.isArray(data.steps) ? data.steps : [];
 
   return (
     <div className="lp-card">
-      {loading && (
-        <div className="lp-inline-loading" role="status">
-          Generating roadmap...
-        </div>
-      )}
       <p className="lp-eyebrow">Learning roadmap</p>
+      {targetRoleLabel && <p className="lp-target-line">{targetRoleLabel}</p>}
       <div className="lp-header">
         <div className="lp-header-main">
           <h2 className="lp-title">Priority focus</h2>

@@ -17,24 +17,26 @@ function MarketAnalysis({ analysis }) {
         : "trend-declining";
 
   return (
-    <div className="market-grid">
-      <div className="market-card">
-        <div className="market-label">Market Summary</div>
-        <div className="market-value">{market_summary}</div>
-      </div>
-      <div className="market-card">
-        <div className="market-label">Your Strength</div>
-        <div className="market-value">{your_strength}</div>
-      </div>
-      <div className="market-card">
-        <div className="market-label">Biggest Opportunity</div>
-        <div className="market-value">{biggest_opportunity}</div>
-      </div>
-      <div className="market-card">
-        <div className="market-label">Demand Trend</div>
-        <div className={`market-value ${trendClass}`}>{demand_trend}</div>
-      </div>
-    </div>
+    <section className="market-insight-card" aria-label="Market insight">
+      <h3 className="market-insight-title">Market insight</h3>
+      <p className="market-insight-summary">{market_summary}</p>
+      <dl className="market-insight-dl">
+        <div className="market-insight-row">
+          <dt>Your edge</dt>
+          <dd>{your_strength}</dd>
+        </div>
+        <div className="market-insight-row">
+          <dt>Top opportunity</dt>
+          <dd>{biggest_opportunity}</dd>
+        </div>
+        <div className="market-insight-row">
+          <dt>Demand</dt>
+          <dd>
+            <span className={trendClass}>{demand_trend}</span>
+          </dd>
+        </div>
+      </dl>
+    </section>
   );
 }
 

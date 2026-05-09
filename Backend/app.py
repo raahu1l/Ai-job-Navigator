@@ -28,6 +28,11 @@ def analyze_route():
     payload = request.get_json(silent=True) or {}
     skills = payload.get("skills", [])
     job_results = payload.get("job_results")
+    n_live = len(job_results) if isinstance(job_results, list) else 0
+    if n_live > 0:
+        print(f"/api/analyze: LIVE job_results count={n_live}")
+    else:
+        print("/api/analyze: no job_results → matcher will use static fallback path")
     return jsonify(analyze(skills, job_results))
 
 

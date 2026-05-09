@@ -2,14 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import SkillInput from "./components/SkillInput";
 import JobResults from "./components/JobResults";
-import SkillGap from "./components/SkillGap";
 import TrendChart from "./components/TrendChart";
 import MarketAnalysis from "./components/MarketAnalysis";
 import LearningPath from "./components/LearningPath";
 import {
   EXPLORATORY_BANNER,
   DEFAULT_MARKET_ANALYSIS,
-  DEFAULT_LEARNING_PATH,
   FALLBACK_TRENDING_CHART,
   normalizeMarketAnalysis,
   normalizeLearningPath,
@@ -32,9 +30,14 @@ function App() {
   const [isResultsHighlighted, setIsResultsHighlighted] = useState(false);
   const [marketAnalysis, setMarketAnalysis] = useState(null);
   const [learningPath, setLearningPath] = useState(null);
+  const [roadmapVisible, setRoadmapVisible] = useState(false);
+  const [roadmapTargetLabel, setRoadmapTargetLabel] = useState("");
+  const [roadmapError, setRoadmapError] = useState(null);
+  const [jobFetchMeta, setJobFetchMeta] = useState({ count: 0, source: null });
   const [showResultsSection, setShowResultsSection] = useState(false);
   const [trendingSkillsQuery, setTrendingSkillsQuery] = useState("");
   const resultsGridRef = useRef(null);
+  const learningPathRef = useRef(null);
   const lastSkillsRef = useRef([]);
 
   const pipelineAgents = [
@@ -85,6 +88,10 @@ function App() {
     lastSkillsRef.current = skills;
     setTrendingSkillsQuery(skills.join(","));
     try {
+      setRoadmapVisible(false);
+      setLearningPath(null);
+      setRoadmapTargetLabel("");
+      setRoadmapError(null);
       setShowResultsSection(true);
       setError("");
       setIsLoading(true);
@@ -110,6 +117,10 @@ function App() {
       const fetchJobsData = await fetchJobsResponse.json();
       const jobs = Array.isArray(fetchJobsData?.jobs) ? fetchJobsData.jobs : [];
       setLiveJobs(jobs);
+      setJobFetchMeta({
+        count: typeof fetchJobsData?.count === "number" ? fetchJobsData.count : jobs.length,
+        source: fetchJobsData?.source ?? null,
+      });
       setActiveAgent(1);
       await sleep(800);
 
@@ -141,7 +152,6 @@ function App() {
       }
 
       setResults(nextResults);
-      setLearningPath(null);
       setActiveAgent(2);
       setLoadingPhase("market");
       await sleep(800);
@@ -176,47 +186,6 @@ function App() {
       }
       setMarketAnalysis(marketPayload);
 
-      setActiveAgent(3);
-      setLoadingPhase("roadmap");
-      await sleep(800);
-
-      const top = nextResults[0] || {};
-      const missingPool = Array.isArray(top.missing_skills)
-        ? top.missing_skills
-        : [];
-      const missingForPath =
-        missingPool.length > 0
-          ? missingPool.slice(0, 5)
-          : skills.slice(0, 3).length > 0
-            ? skills.slice(0, 3)
-            : ["Communication", "Technical depth", "Portfolio"];
-      const role =
-        top.title && top.title !== "Related opportunities & domains"
-          ? top.title
-          : `${skills[0] || "Target"} roles`;
-
-      try {
-        const lpRes = await fetch(`${API_BASE}/api/learning-path`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            missing_skills: missingForPath,
-            target_role: role,
-          }),
-        });
-        if (lpRes.ok) {
-          const lpRaw = await lpRes.json();
-          setLearningPath(normalizeLearningPath(lpRaw));
-        } else {
-          setLearningPath(normalizeLearningPath(DEFAULT_LEARNING_PATH));
-        }
-      } catch (err) {
-        console.log("Learning path error:", err);
-        setLearningPath(normalizeLearningPath(DEFAULT_LEARNING_PATH));
-      }
-
       setActiveAgent(4);
       setLoadingPhase(null);
 
@@ -233,7 +202,9 @@ function App() {
       const sk = lastSkillsRef.current || [];
       setResults(buildMinimalPlaceholderResults(sk));
       setMarketAnalysis({ ...DEFAULT_MARKET_ANALYSIS });
-      setLearningPath(normalizeLearningPath({ ...DEFAULT_LEARNING_PATH }));
+      setRoadmapVisible(false);
+      setLearningPath(null);
+      setJobFetchMeta({ count: 0, source: null });
       setLoadingPhase(null);
       window.setTimeout(() => {
         resultsGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -249,6 +220,10 @@ function App() {
     setLiveJobs([]);
     setMarketAnalysis(null);
     setLearningPath(null);
+    setRoadmapVisible(false);
+    setRoadmapTargetLabel("");
+    setRoadmapError(null);
+    setJobFetchMeta({ count: 0, source: null });
     setActiveAgent(-1);
     setIsLoading(false);
     setLoadingPhase(null);
@@ -258,8 +233,15 @@ function App() {
   };
 
   const handleGetLearningPath = async (job) => {
+    const title = job?.title || "Role";
+    const company = job?.company || "Employer";
+    setRoadmapVisible(true);
+    setRoadmapTargetLabel(`${title} · ${company}`);
+    setRoadmapError(null);
+    setLearningPath(null);
+    setError("");
+    setLoadingPhase("roadmap");
     try {
-      setLoadingPhase("roadmap");
       const missing = Array.isArray(job?.missing_skills) ? job.missing_skills : [];
       const response = await fetch(`${API_BASE}/api/learning-path`, {
         method: "POST",
@@ -268,7 +250,7 @@ function App() {
         },
         body: JSON.stringify({
           missing_skills: missing.length ? missing : ["Core skills"],
-          target_role: job?.title || "Your target role",
+          target_role: title,
         }),
       });
 
@@ -278,19 +260,16 @@ function App() {
 
       const data = await response.json();
       setLearningPath(normalizeLearningPath(data));
+      window.setTimeout(() => {
+        learningPathRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 80);
     } catch (err) {
-      setError(err.message || "Something went wrong");
-      setLearningPath(normalizeLearningPath(DEFAULT_LEARNING_PATH));
+      setRoadmapError(err.message || "Something went wrong");
+      setLearningPath(null);
     } finally {
       setLoadingPhase(null);
     }
   };
-
-  const uniqueMissingCount =
-    results.length > 0
-      ? new Set(results.flatMap((r) => r.missing_skills || [])).size
-      : 0;
-  const top3Titles = results.slice(0, 3).map((r) => r.title).filter(Boolean);
 
   const loadingMessage =
     loadingPhase === "jobs"
@@ -298,7 +277,7 @@ function App() {
       : loadingPhase === "market"
         ? "Preparing market insights..."
         : loadingPhase === "roadmap"
-          ? "Generating roadmap..."
+          ? "Generating your roadmap..."
           : null;
 
   const displayMarket = marketAnalysis || DEFAULT_MARKET_ANALYSIS;
@@ -316,7 +295,7 @@ function App() {
             Find Your Perfect <span>Skill Match</span>
           </h1>
           <p className="hero-lead">
-            Match roles from live listings, spot skill gaps, and get a learning roadmap—across tech, business, and more.
+            Live job matches, skill gaps, trending demand, and a short learning roadmap—one flow.
           </p>
         </section>
 
@@ -369,62 +348,64 @@ function App() {
               )}
 
               {exploratoryMode && results.length > 0 && (
-                <div className="exploratory-banner" role="note">
+                <div className="exploratory-banner exploratory-banner--compact" role="note">
                   {EXPLORATORY_BANNER}
                 </div>
               )}
 
-              {results.length > 0 && (
-                <>
-                  <div className="stats-bar">
-                    <div className="stat-item">
-                      <span className="stat-number">500</span>
-                      <span className="stat-label">Jobs Analyzed</span>
-                    </div>
-                    <div className="stat-item">
-                      <span className="stat-number">{results.length}</span>
-                      <span className="stat-label">Roles You Match</span>
-                    </div>
-                    <div className="stat-item">
-                      <span className="stat-number">{uniqueMissingCount}</span>
-                      <span className="stat-label">Skills to Learn</span>
-                    </div>
-                  </div>
-
-                  <div className="top-roles-bar">
-                    <span className="top-roles-label">
-                      You're best suited for:
-                    </span>
-                    {(top3Titles.length > 0
-                      ? top3Titles
-                      : ["Software & data", "Product & delivery", "Cross-functional roles"]
-                    ).map((title) => (
-                      <span className="role-tag" key={title}>{title}</span>
-                    ))}
-                  </div>
-
-                  <div className="results-grid results-grid--jobs-first">
-                    <div className="jobs-column">
-                      <JobResults
-                        results={results}
-                        onGetLearningPath={handleGetLearningPath}
-                      />
-                    </div>
-                    <SkillGap results={results} className="gap-card" />
-                  </div>
-                </>
+              {(jobFetchMeta.source || jobFetchMeta.count > 0) && (
+                <div className="stats-bar stats-bar--minimal" role="status">
+                  <span>
+                    <strong>{jobFetchMeta.count}</strong> job{jobFetchMeta.count === 1 ? "" : "s"}{" "}
+                    analyzed
+                  </span>
+                  <span className="stats-bar__sep">·</span>
+                  <span>
+                    Source:{" "}
+                    <strong>
+                      {jobFetchMeta.source === "adzuna"
+                        ? "Live (Adzuna)"
+                        : jobFetchMeta.source === "fallback"
+                          ? "Fallback dataset"
+                          : jobFetchMeta.source ?? "—"}
+                    </strong>
+                  </span>
+                  {results.length > 0 && (
+                    <>
+                      <span className="stats-bar__sep">·</span>
+                      <span>
+                        <strong>{results.length}</strong> roles ranked
+                      </span>
+                    </>
+                  )}
+                </div>
               )}
 
-              <MarketAnalysis analysis={displayMarket} />
+              {results.length > 0 && (
+                <div className="jobs-column">
+                  <JobResults
+                    results={results}
+                    onGetLearningPath={handleGetLearningPath}
+                  />
+                </div>
+              )}
 
-              <div className="chart-card chart-card--in-results">
+              <div className="chart-card chart-card--compact">
                 <TrendChart trending={chartData} usingFallback={!trending?.length} />
               </div>
 
-              <LearningPath
-                learningPath={learningPath}
-                loading={loadingPhase === "roadmap"}
-              />
+              <MarketAnalysis analysis={displayMarket} />
+
+              {(roadmapVisible || loadingPhase === "roadmap") && (
+                <div ref={learningPathRef} className="learning-path-anchor">
+                  <LearningPath
+                    targetRoleLabel={roadmapTargetLabel}
+                    learningPath={learningPath}
+                    loading={loadingPhase === "roadmap"}
+                    errorMessage={roadmapError}
+                  />
+                </div>
+              )}
             </>
           )}
         </div>

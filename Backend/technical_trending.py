@@ -9,7 +9,7 @@ import re
 from collections import Counter
 from typing import Iterable
 
-from skill_filters import filter_skill_set, is_blocked_skill
+from skill_filters import filter_skill_set, filter_trending_results, is_blocked_skill
 
 # Canonical display names; matching is case-insensitive. Longer phrases first (handled at runtime).
 TECH_SKILL_WHITELIST: tuple[str, ...] = (
@@ -188,4 +188,4 @@ def trending_from_jobs(jobs: Iterable[dict], top_n: int = 15) -> list[dict]:
         out.append({"skill": skill, "count": count})
         if len(out) >= top_n:
             break
-    return out
+    return filter_trending_results(out)

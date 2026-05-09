@@ -11,14 +11,10 @@ function TrendChart({ trending, usingFallback = false }) {
   const data = Array.isArray(trending) && trending.length > 0 ? trending : [];
 
   return (
-    <div>
-      <h3 className="card-title">
-        Trending Skills <span>Current market demand</span>
-      </h3>
+    <div className="trend-chart-root">
+      <h3 className="card-title card-title--compact">Trending skills</h3>
       {usingFallback && (
-        <p className="chart-fallback-note">
-          Showing representative demand categories while live trend data loads.
-        </p>
+        <p className="chart-fallback-note">Sample demand mix until live data loads.</p>
       )}
       {data.length === 0 ? (
         <p className="chart-empty">Preparing market demand chart…</p>

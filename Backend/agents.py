@@ -11,6 +11,33 @@ from skill_domain import (
 )
 from skill_filters import filter_skill_list
 
+
+def _sanitize_learning_path_payload(data: dict) -> dict:
+    """Strip generic labels from LLM learning-path skills."""
+    if not isinstance(data, dict):
+        return data
+    out = dict(data)
+    ps = out.get("priority_skill")
+    if isinstance(ps, str):
+        kept = filter_skill_list([ps])
+        out["priority_skill"] = kept[0] if kept else ""
+    steps = out.get("steps")
+    if not isinstance(steps, list):
+        return out
+    new_steps = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        sk = step.get("skill")
+        if not isinstance(sk, str):
+            continue
+        kept = filter_skill_list([sk])
+        if not kept:
+            continue
+        new_steps.append({**step, "skill": kept[0]})
+    out["steps"] = new_steps
+    return out
+
 def extract_json(text: str):
     import re
     # Remove thinking tags if present
@@ -89,7 +116,7 @@ Target role: {target_role}
     text = extract_json(response.choices[0].message.content)
     try:
         text = text.replace("```json", "").replace("```", "").strip()
-        return json.loads(text)
+        return _sanitize_learning_path_payload(json.loads(text))
     except:
         return {
             "priority_skill": missing_skills[0] if missing_skills else "",
