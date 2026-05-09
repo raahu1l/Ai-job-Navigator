@@ -27,7 +27,8 @@ def test():
 def analyze_route():
     payload = request.get_json(silent=True) or {}
     skills = payload.get("skills", [])
-    return jsonify(analyze(skills))
+    job_results = payload.get("job_results")
+    return jsonify(analyze(skills, job_results))
 
 
 @app.get("/api/trending")

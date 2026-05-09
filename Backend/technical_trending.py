@@ -1,6 +1,7 @@
 """
-Trending technical skills from job titles and descriptions only.
-Uses a whitelist — never reads legacy Kaggle category fields on jobs.
+Trending skills from job titles and descriptions: whitelist extraction,
+then blacklist filter to drop vague domain/category labels before output.
+Does not read legacy Kaggle ``skills`` arrays on jobs.
 """
 from __future__ import annotations
 
@@ -103,9 +104,35 @@ TECH_SKILL_WHITELIST: tuple[str, ...] = (
     "Tableau",
     "Power BI",
     "Microservices",
-    "Terraform",
     "DevOps",
     "SRE",
+    "Microsoft Excel",
+    "Excel",
+    "Marketing",
+    "Sales",
+    "Recruiting",
+    "Finance",
+    "Communication",
+    "Negotiation",
+    "Project Management",
+    "Customer Success",
+    "Business Analysis",
+)
+
+# Vague domain / category labels — excluded from trending output after counts.
+# Exact canonical skill names only (normalized to lowercase for lookup).
+TRENDING_SKILL_BLACKLIST: frozenset[str] = frozenset(
+    {
+        "engineering",
+        "information technology",
+        "industry",
+        "department",
+        "technology sector",
+        "organization",
+        "company",
+        # Common Kaggle / ATS synonym strings seen in legacy job metadata
+        "information technologies",
+    }
 )
 
 # Deduplicate while preserving order of first occurrence
@@ -120,6 +147,14 @@ for _s in TECH_SKILL_WHITELIST:
 WHITELIST_BY_LENGTH: tuple[str, ...] = tuple(
     sorted(_UNIQUE_WHITELIST, key=len, reverse=True)
 )
+
+
+def is_trending_blacklisted(skill: str) -> bool:
+    """True if skill is a vague category/domain label, not actionable for the chart."""
+    if not skill or not str(skill).strip():
+        return True
+    key = str(skill).strip().lower()
+    return key in TRENDING_SKILL_BLACKLIST
 
 
 def _skill_regex(skill: str) -> re.Pattern:
@@ -161,7 +196,12 @@ def trending_from_jobs(jobs: Iterable[dict], top_n: int = 15) -> list[dict]:
         for skill in extract_technical_skills_from_job(job):
             counter[skill] += 1
 
+    # Filter blacklist after aggregation; over-fetch so we still return up to top_n items.
     out: list[dict] = []
-    for skill, count in counter.most_common(top_n):
+    for skill, count in counter.most_common(max(top_n * 8, top_n + 25)):
+        if is_trending_blacklisted(skill):
+            continue
         out.append({"skill": skill, "count": count})
+        if len(out) >= top_n:
+            break
     return out

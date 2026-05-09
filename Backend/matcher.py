@@ -1,8 +1,9 @@
 import json
+import re
 from pathlib import Path
 
 from job_fetcher import fetch_jobs
-from technical_trending import trending_from_jobs
+from technical_trending import extract_technical_skills_from_job, trending_from_jobs
 
 
 DATA_PATH = Path(__file__).resolve().parent / "data" / "jobs.json"
@@ -11,10 +12,61 @@ with DATA_PATH.open("r", encoding="utf-8") as f:
     JOBS = json.load(f)
 
 
-def analyze(user_skills: list) -> list:
+def _skills_from_live_job(job: dict) -> list[str]:
+    """Skills for scoring: whitelist tech from title/description plus any API-provided tags."""
+    found = extract_technical_skills_from_job(job)
+    for s in job.get("skills") or []:
+        if isinstance(s, str) and s.strip():
+            found.add(s.strip())
+    if found:
+        return list(found)
+    title = str(job.get("title") or "")
+    words = re.findall(r"[A-Za-z][A-Za-z0-9+.#-]{1,}", title)
+    skip = {
+        "senior", "junior", "lead", "manager", "director", "remote", "full", "time", "part",
+        "the", "and", "for", "with", "our", "global",
+    }
+    out = [w for w in words if w.lower() not in skip][:8]
+    return out if out else ["Role-specific requirements"]
+
+
+def _analyze_live_jobs(user_skill_set: set[str], job_results: list) -> list:
+    results = []
+    for job in job_results[:50]:
+        display_skills = _skills_from_live_job(job)
+        matched_skills: list[str] = []
+        missing_skills: list[str] = []
+        for disp in display_skills:
+            n = disp.lower().strip()
+            if n in user_skill_set:
+                matched_skills.append(disp)
+            else:
+                missing_skills.append(disp)
+        total = len(display_skills)
+        match_score = round((len(matched_skills) / total) * 100, 2) if total else 0.0
+        results.append(
+            {
+                "job_id": str(job.get("job_id", "")),
+                "title": str(job.get("title") or "Role"),
+                "company": str(job.get("company") or "Unknown"),
+                "match_score": match_score,
+                "matched_skills": matched_skills,
+                "missing_skills": missing_skills,
+            }
+        )
+    results.sort(key=lambda item: item["match_score"], reverse=True)
+    return results[:10]
+
+
+def analyze(user_skills: list, job_results: list | None = None) -> list:
     user_skill_set = {str(skill).strip().lower() for skill in user_skills if str(skill).strip()}
     if not user_skill_set:
         return []
+
+    if isinstance(job_results, list) and len(job_results) > 0:
+        live = _analyze_live_jobs(user_skill_set, job_results)
+        if live:
+            return live
 
     results = []
 

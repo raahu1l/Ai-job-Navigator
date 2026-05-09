@@ -7,31 +7,40 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-function TrendChart({ trending }) {
+function TrendChart({ trending, usingFallback = false }) {
+  const data = Array.isArray(trending) && trending.length > 0 ? trending : [];
+
   return (
     <div>
       <h3 className="card-title">
         Trending Skills <span>Current market demand</span>
       </h3>
-      {(!trending || trending.length === 0) ? (
-        <p>Loading trends...</p>
+      {usingFallback && (
+        <p className="chart-fallback-note">
+          Showing representative demand categories while live trend data loads.
+        </p>
+      )}
+      {data.length === 0 ? (
+        <p className="chart-empty">Preparing market demand chart…</p>
       ) : (
-        <ResponsiveContainer width="100%" height={400}>
-          <BarChart data={trending} layout="vertical">
-            <XAxis type="number" />
-            <YAxis type="category" dataKey="skill" width={170} />
+        <div className="chart-wrap">
+          <ResponsiveContainer width="100%" height="100%" minHeight={280}>
+            <BarChart data={data} layout="vertical" margin={{ left: 8, right: 16, top: 8, bottom: 8 }}>
+            <XAxis type="number" tick={{ fontSize: 12 }} />
+            <YAxis type="category" dataKey="skill" width={120} tick={{ fontSize: 11 }} />
             <Tooltip
               contentStyle={{
                 borderRadius: "10px",
                 border: "1px solid #E5E7EB",
                 backgroundColor: "#FFFFFF",
-                boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+                boxShadow: "0 2px 8px rgba(15,23,42,0.08)",
               }}
               cursor={{ fill: "rgba(99,102,241,0.08)" }}
             />
-            <Bar dataKey="count" fill="#6366F1" radius={[0, 8, 8, 0]} />
+            <Bar dataKey="count" fill="#6366F1" radius={[0, 6, 6, 0]} />
           </BarChart>
         </ResponsiveContainer>
+        </div>
       )}
     </div>
   );

@@ -1,5 +1,16 @@
 import { useEffect, useState } from "react";
 
+const SKILL_SUGGESTION_GROUPS = [
+  { label: "Engineering", skills: ["Python", "React", "SQL"] },
+  { label: "Cloud & DevOps", skills: ["AWS", "Docker", "Kubernetes"] },
+  { label: "Marketing", skills: ["Marketing", "SEO", "Content Strategy"] },
+  { label: "Sales", skills: ["Sales", "CRM", "Negotiation"] },
+  { label: "Finance", skills: ["Finance", "Excel", "Risk Analysis"] },
+  { label: "People", skills: ["HR", "Recruiting", "Communication"] },
+  { label: "Product", skills: ["Product Management", "Analytics"] },
+  { label: "Design", skills: ["UI/UX", "Figma", "Research"] },
+];
+
 function SkillInput({
   onAnalyze,
   isLoading,
@@ -57,8 +68,13 @@ function SkillInput({
     setInputValue("");
   };
 
+  const applySuggestionGroup = (groupSkills) => {
+    setSkills([...groupSkills]);
+    setInputValue("");
+  };
+
   return (
-    <div>
+    <div className="skill-input-root">
       <div className="tags-input-wrapper">
         <div className="tags-container">
           {skills.map((skill, index) => (
@@ -73,7 +89,11 @@ function SkillInput({
             value={inputValue}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={skills.length === 0 ? "Type a skill and press Enter..." : "Add more skills..."}
+            placeholder={
+              skills.length === 0
+                ? "Enter your skills to discover matching careers, gaps, and learning paths"
+                : "Add another skill — press Enter or comma to add"
+            }
           />
         </div>
         <select
@@ -104,6 +124,23 @@ function SkillInput({
             Clear
           </button>
         )}
+      </div>
+      <div className="skill-suggestions">
+        <span className="skill-suggestions-label">Quick try — sample profiles</span>
+        <div className="skill-suggestions-chips">
+          {SKILL_SUGGESTION_GROUPS.map((group) => (
+            <button
+              key={group.label}
+              type="button"
+              className="skill-suggestion-chip"
+              onClick={() => applySuggestionGroup(group.skills)}
+              disabled={isLoading}
+              title={group.skills.join(", ")}
+            >
+              {group.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

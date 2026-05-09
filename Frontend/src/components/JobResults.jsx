@@ -1,70 +1,112 @@
 function JobResults({ results, onGetLearningPath }) {
   const getMatchScoreColor = (matchScore) => {
-    if (matchScore >= 80) {
+    const n = Number(matchScore) || 0;
+    if (n >= 80) {
       return "#22C55E";
     }
-    if (matchScore >= 50) {
+    if (n >= 50) {
       return "#F59E0B";
     }
     return "#EF4444";
   };
 
+  const safeResults = Array.isArray(results) ? results : [];
+
   return (
-    <>
-      {results.map((job, index) => (
-        <div key={`${job.title}-${job.company}-${index}`} className="job-card">
-          <h3 className="job-title">{job.title}</h3>
-          <p className="job-company">{job.company}</p>
-          <p
-            className="match-score"
-            style={{ color: getMatchScoreColor(job.match_score) }}
-          >
-            {job.match_score}%
-          </p>
-          <div className="progress-bar">
-            <div
-              className="progress-fill"
-              style={{ width: `${job.match_score}%` }}
-            ></div>
-          </div>
+    <div className="job-results-list">
+      {safeResults.map((job, index) => {
+        const matched = Array.isArray(job.matched_skills) ? job.matched_skills : [];
+        const missing = Array.isArray(job.missing_skills) ? job.missing_skills : [];
+        const score = Number(job.match_score) || 0;
+        const title = job.title || "Role";
+        const company = job.company || "Employer";
+        const scoreColor = getMatchScoreColor(score);
 
-          <div>
-            <p className="skills-label matched">Matched Skills</p>
-            <div className="pills">
-              {job.matched_skills.map((skill, skillIndex) => (
-                <span
-                  key={`${job.title}-matched-${skill}-${skillIndex}`}
-                  className="pill matched"
-                >
-                  {skill}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className="skills-label missing">Missing Skills</p>
-            <div className="pills">
-              {job.missing_skills.map((skill, skillIndex) => (
-                <span
-                  key={`${job.title}-missing-${skill}-${skillIndex}`}
-                  className="pill missing"
-                >
-                  {skill}
-                </span>
-              ))}
-            </div>
-          </div>
-          <button
-            type="button"
-            className="learning-path-btn"
-            onClick={() => onGetLearningPath(job)}
+        return (
+          <article
+            key={`${job.job_id || title}-${company}-${index}`}
+            className="job-card"
           >
-            Get Learning Path
-          </button>
-        </div>
-      ))}
-    </>
+            <div className="job-card__header">
+              <div className="job-card__titles">
+                <h3 className="job-title">{title}</h3>
+                <p className="job-company">{company}</p>
+              </div>
+              <div
+                className="job-card__score-block"
+                style={{ "--job-score-color": scoreColor }}
+              >
+                <span className="job-card__score-label">Match</span>
+                <span className="job-card__score-value">{Math.round(score)}%</span>
+              </div>
+            </div>
+
+            <div className="job-card__progress-wrap">
+              <div className="progress-bar" aria-hidden="true">
+                <div
+                  className="progress-fill"
+                  style={{
+                    width: `${Math.min(100, Math.max(0, score))}%`,
+                    background: scoreColor,
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="job-card__sections">
+              <section className="job-card__skill-block">
+                <p className="skills-label matched">Matched</p>
+                <div className="pills">
+                  {matched.length > 0 ? (
+                    matched.map((skill, skillIndex) => (
+                      <span
+                        key={`${title}-matched-${skill}-${skillIndex}`}
+                        className="pill matched"
+                      >
+                        {skill}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="pill pill--muted">Add aligned skills to improve match</span>
+                  )}
+                </div>
+              </section>
+              <section className="job-card__skill-block">
+                <p className="skills-label missing">Gaps / next</p>
+                <div className="pills">
+                  {missing.length > 0 ? (
+                    missing.map((skill, skillIndex) => (
+                      <span
+                        key={`${title}-missing-${skill}-${skillIndex}`}
+                        className="pill missing"
+                      >
+                        {skill}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="pill pill--muted">See full listing for details</span>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <button
+              type="button"
+              className="learning-path-btn"
+              onClick={() =>
+                onGetLearningPath({
+                  ...job,
+                  missing_skills: missing,
+                  title,
+                })
+              }
+            >
+              Get learning path
+            </button>
+          </article>
+        );
+      })}
+    </div>
   );
 }
 

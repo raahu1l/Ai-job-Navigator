@@ -1,9 +1,19 @@
+import { EXPLORATORY_BANNER } from "../analysisFallbacks";
+
 function SkillGap({ results, className = "" }) {
-  const missingSkillCounts = results.reduce((acc, job) => {
-    const missingSkills = Array.isArray(job.missing_skills) ? job.missing_skills : [];
+  const safeResults = Array.isArray(results) ? results : [];
+
+  const missingSkillCounts = safeResults.reduce((acc, job) => {
+    const missingSkills = Array.isArray(job.missing_skills)
+      ? job.missing_skills
+      : [];
 
     missingSkills.forEach((skill) => {
-      acc[skill] = (acc[skill] || 0) + 1;
+      if (skill == null || String(skill).trim() === "") {
+        return;
+      }
+      const key = String(skill).trim();
+      acc[key] = (acc[key] || 0) + 1;
     });
 
     return acc;
@@ -20,11 +30,17 @@ function SkillGap({ results, className = "" }) {
       <h3 className="card-title">Top Missing Skills</h3>
 
       {topMissingSkills.length === 0 ? (
-        <p>No missing skills found in current results</p>
+        <div className="gap-fallback">
+          <p className="gap-fallback-text">{EXPLORATORY_BANNER}</p>
+          <p className="gap-fallback-hint">
+            Try adding tools from the job titles you care about (e.g. Python, AWS, SQL)
+            or widen your location to surface more signal.
+          </p>
+        </div>
       ) : (
         <>
           <div className="insight-box">
-            Learn {topSkill} to unlock {topSkillCount} more jobs
+            Learn <strong>{topSkill}</strong> to unlock {topSkillCount} more roles in this set
           </div>
           <ul className="gap-list">
             {topMissingSkills.map(([skill, count]) => (

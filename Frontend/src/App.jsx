@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import SkillInput from "./components/SkillInput";
 import JobResults from "./components/JobResults";
@@ -6,6 +6,19 @@ import SkillGap from "./components/SkillGap";
 import TrendChart from "./components/TrendChart";
 import MarketAnalysis from "./components/MarketAnalysis";
 import LearningPath from "./components/LearningPath";
+import {
+  EXPLORATORY_BANNER,
+  DEFAULT_MARKET_ANALYSIS,
+  DEFAULT_LEARNING_PATH,
+  FALLBACK_TRENDING_CHART,
+  normalizeMarketAnalysis,
+  normalizeLearningPath,
+  buildFallbackResultsFromJobs,
+  buildMinimalPlaceholderResults,
+  isExploratoryResults,
+} from "./analysisFallbacks";
+
+const API_BASE = "https://ai-job-navigator-m9gq.onrender.com";
 
 function App() {
   const [trending, setTrending] = useState([]);
@@ -15,11 +28,15 @@ function App() {
   const [activeAgent, setActiveAgent] = useState(-1);
   const [exampleSkills, setExampleSkills] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingPhase, setLoadingPhase] = useState(null);
   const [error, setError] = useState("");
   const [isResultsHighlighted, setIsResultsHighlighted] = useState(false);
   const [marketAnalysis, setMarketAnalysis] = useState(null);
   const [learningPath, setLearningPath] = useState(null);
+  const [showResultsSection, setShowResultsSection] = useState(false);
   const resultsGridRef = useRef(null);
+  const lastSkillsRef = useRef([]);
+
   const pipelineAgents = [
     { icon: "🔍", label: "Job Researcher" },
     { icon: "🧠", label: "Skill Extractor" },
@@ -29,11 +46,23 @@ function App() {
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  const exploratoryMode = useMemo(
+    () => isExploratoryResults(results),
+    [results],
+  );
+
+  const chartData = useMemo(() => {
+    if (Array.isArray(trending) && trending.length > 0) {
+      return trending;
+    }
+    return FALLBACK_TRENDING_CHART;
+  }, [trending]);
+
   useEffect(() => {
     const fetchTrending = async () => {
       try {
         setError("");
-        const response = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/trending");
+        const response = await fetch(`${API_BASE}/api/trending`);
 
         if (!response.ok) {
           throw new Error("Failed to fetch trending skills");
@@ -50,13 +79,16 @@ function App() {
   }, []);
 
   const handleAnalyze = async (skills) => {
+    lastSkillsRef.current = skills;
     try {
+      setShowResultsSection(true);
       setError("");
       setIsLoading(true);
+      setLoadingPhase("jobs");
       setActiveAgent(0);
       await sleep(800);
 
-      const fetchJobsResponse = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/fetch-jobs", {
+      const fetchJobsResponse = await fetch(`${API_BASE}/api/fetch-jobs`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -77,7 +109,7 @@ function App() {
       setActiveAgent(1);
       await sleep(800);
 
-      const response = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/analyze", {
+      const response = await fetch(`${API_BASE}/api/analyze`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -89,11 +121,25 @@ function App() {
         throw new Error("Failed to analyze skills");
       }
 
-      const data = await response.json();
-      const nextResults = Array.isArray(data) ? data : [];
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        data = [];
+      }
+      let nextResults = Array.isArray(data) ? data : [];
+
+      if (nextResults.length === 0 && jobs.length > 0) {
+        nextResults = buildFallbackResultsFromJobs(jobs, skills);
+      }
+      if (nextResults.length === 0) {
+        nextResults = buildMinimalPlaceholderResults(skills);
+      }
+
       setResults(nextResults);
       setLearningPath(null);
       setActiveAgent(2);
+      setLoadingPhase("market");
       await sleep(800);
 
       const topTrendingSkills = trending
@@ -101,47 +147,96 @@ function App() {
         .map((item) => item?.skill)
         .filter(Boolean);
 
+      let marketPayload = { ...DEFAULT_MARKET_ANALYSIS };
       try {
-        const marketResponse = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/market-analysis", {
+        const marketResponse = await fetch(`${API_BASE}/api/market-analysis`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            trending_skills: topTrendingSkills,
+            trending_skills:
+              topTrendingSkills.length > 0
+                ? topTrendingSkills
+                : FALLBACK_TRENDING_CHART.map((x) => x.skill),
             user_skills: skills,
           }),
         });
 
         if (marketResponse.ok) {
-          const marketData = await marketResponse.json();
-          setMarketAnalysis(marketData);
-          console.log("Market analysis response:", marketData);
-        } else {
-          setMarketAnalysis(null);
+          const raw = await marketResponse.json();
+          marketPayload = normalizeMarketAnalysis(raw);
         }
       } catch (err) {
         console.log("Market analysis error if any:", err);
-        setMarketAnalysis(null);
       }
-      setActiveAgent(3);
-      await sleep(800);
-      setActiveAgent(4);
+      setMarketAnalysis(marketPayload);
 
-      if (nextResults.length > 0) {
-        setIsResultsHighlighted(true);
-        window.setTimeout(() => {
-          resultsGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 50);
-        window.setTimeout(() => {
-          setIsResultsHighlighted(false);
-        }, 1200);
+      setActiveAgent(3);
+      setLoadingPhase("roadmap");
+      await sleep(800);
+
+      const top = nextResults[0] || {};
+      const missingPool = Array.isArray(top.missing_skills)
+        ? top.missing_skills
+        : [];
+      const missingForPath =
+        missingPool.length > 0
+          ? missingPool.slice(0, 5)
+          : skills.slice(0, 3).length > 0
+            ? skills.slice(0, 3)
+            : ["Communication", "Technical depth", "Portfolio"];
+      const role =
+        top.title && top.title !== "Related opportunities & domains"
+          ? top.title
+          : `${skills[0] || "Target"} roles`;
+
+      try {
+        const lpRes = await fetch(`${API_BASE}/api/learning-path`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            missing_skills: missingForPath,
+            target_role: role,
+          }),
+        });
+        if (lpRes.ok) {
+          const lpRaw = await lpRes.json();
+          setLearningPath(normalizeLearningPath(lpRaw));
+        } else {
+          setLearningPath(normalizeLearningPath(DEFAULT_LEARNING_PATH));
+        }
+      } catch (err) {
+        console.log("Learning path error:", err);
+        setLearningPath(normalizeLearningPath(DEFAULT_LEARNING_PATH));
       }
+
+      setActiveAgent(4);
+      setLoadingPhase(null);
+
+      setIsResultsHighlighted(true);
+      window.setTimeout(() => {
+        resultsGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
+      window.setTimeout(() => {
+        setIsResultsHighlighted(false);
+      }, 1200);
     } catch (err) {
       setError(err.message || "Something went wrong");
       setActiveAgent(-1);
+      const sk = lastSkillsRef.current || [];
+      setResults(buildMinimalPlaceholderResults(sk));
+      setMarketAnalysis({ ...DEFAULT_MARKET_ANALYSIS });
+      setLearningPath(normalizeLearningPath({ ...DEFAULT_LEARNING_PATH }));
+      setLoadingPhase(null);
+      window.setTimeout(() => {
+        resultsGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 80);
     } finally {
       setIsLoading(false);
+      setLoadingPhase(null);
     }
   };
 
@@ -158,18 +253,23 @@ function App() {
     setLearningPath(null);
     setActiveAgent(-1);
     setIsLoading(false);
+    setLoadingPhase(null);
+    setShowResultsSection(false);
+    setError("");
   };
 
   const handleGetLearningPath = async (job) => {
     try {
-      const response = await fetch("https://ai-job-navigator-m9gq.onrender.com/api/learning-path", {
+      setLoadingPhase("roadmap");
+      const missing = Array.isArray(job?.missing_skills) ? job.missing_skills : [];
+      const response = await fetch(`${API_BASE}/api/learning-path`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          missing_skills: job.missing_skills,
-          target_role: job.title,
+          missing_skills: missing.length ? missing : ["Core skills"],
+          target_role: job?.title || "Your target role",
         }),
       });
 
@@ -178,16 +278,31 @@ function App() {
       }
 
       const data = await response.json();
-      setLearningPath(data);
+      setLearningPath(normalizeLearningPath(data));
     } catch (err) {
       setError(err.message || "Something went wrong");
+      setLearningPath(normalizeLearningPath(DEFAULT_LEARNING_PATH));
+    } finally {
+      setLoadingPhase(null);
     }
   };
 
-  const uniqueMissingCount = results.length > 0
-    ? new Set(results.flatMap((r) => r.missing_skills)).size
-    : 0;
-  const top3Titles = results.slice(0, 3).map((r) => r.title);
+  const uniqueMissingCount =
+    results.length > 0
+      ? new Set(results.flatMap((r) => r.missing_skills || [])).size
+      : 0;
+  const top3Titles = results.slice(0, 3).map((r) => r.title).filter(Boolean);
+
+  const loadingMessage =
+    loadingPhase === "jobs"
+      ? "Analyzing jobs..."
+      : loadingPhase === "market"
+        ? "Preparing market insights..."
+        : loadingPhase === "roadmap"
+          ? "Generating roadmap..."
+          : null;
+
+  const displayMarket = marketAnalysis || DEFAULT_MARKET_ANALYSIS;
 
   return (
     <div>
@@ -257,15 +372,15 @@ function App() {
             onAnalyze={handleAnalyze}
             isLoading={isLoading}
             exampleSkills={exampleSkills}
-            hasResults={results.length > 0}
+            hasResults={showResultsSection && !isLoading}
             onClear={handleClear}
             location={location}
             setLocation={setLocation}
           />
-          {error && <p>{error}</p>}
+          {error && <p className="input-error">{error}</p>}
         </div>
 
-        {(isLoading || results.length > 0) && (
+        {(isLoading || showResultsSection) && (
           <div
             ref={resultsGridRef}
             className={`results-section ${isResultsHighlighted ? "results-section--highlight" : ""}`}
@@ -294,6 +409,18 @@ function App() {
               </div>
             </section>
 
+            {loadingMessage && (
+              <div className="analysis-loading-banner" role="status">
+                {loadingMessage}
+              </div>
+            )}
+
+            {exploratoryMode && results.length > 0 && (
+              <div className="exploratory-banner" role="note">
+                {EXPLORATORY_BANNER}
+              </div>
+            )}
+
             {results.length > 0 && (
               <>
                 <div className="stats-bar">
@@ -315,29 +442,36 @@ function App() {
                   <span className="top-roles-label">
                     You're best suited for:
                   </span>
-                  {top3Titles.map((title) => (
+                  {(top3Titles.length > 0
+                    ? top3Titles
+                    : ["Software & data", "Product & delivery", "Cross-functional roles"]
+                  ).map((title) => (
                     <span className="role-tag" key={title}>{title}</span>
                   ))}
                 </div>
 
                 <div className="results-grid results-grid--jobs-first">
                   <div className="jobs-column">
-                    <JobResults results={results} onGetLearningPath={handleGetLearningPath} />
+                    <JobResults
+                      results={results}
+                      onGetLearningPath={handleGetLearningPath}
+                    />
                   </div>
                   <SkillGap results={results} className="gap-card" />
                 </div>
               </>
             )}
 
-            {marketAnalysis && <MarketAnalysis analysis={marketAnalysis} />}
+            <MarketAnalysis analysis={displayMarket} />
 
-            {results.length > 0 && (
-              <div className="chart-card chart-card--in-results">
-                <TrendChart trending={trending} />
-              </div>
-            )}
+            <div className="chart-card chart-card--in-results">
+              <TrendChart trending={chartData} usingFallback={!trending?.length} />
+            </div>
 
-            {learningPath && <LearningPath learningPath={learningPath} />}
+            <LearningPath
+              learningPath={learningPath}
+              loading={loadingPhase === "roadmap"}
+            />
           </div>
         )}
       </main>
