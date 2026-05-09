@@ -3,10 +3,25 @@ import json
 from groq import Groq
 from dotenv import load_dotenv
 
+def extract_json(text: str):
+    import re
+    # Remove thinking tags if present
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    text = text.replace("```json", "").replace("```", "").strip()
+    # Find JSON object first (prefer object over array)
+    object_match = re.search(r'\{.*\}', text, re.DOTALL)
+    if object_match:
+        return object_match.group()
+    # Fall back to array
+    array_match = re.search(r'\[.*\]', text, re.DOTALL)
+    if array_match:
+        return array_match.group()
+    return text.strip()
+
 load_dotenv()
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-MODEL = "llama-3.1-8b-instant"
+MODEL = "qwen/qwen3-32b"
 
 def extract_skills_from_jd(job_description: str) -> list:
     prompt = f"""
@@ -25,7 +40,7 @@ Job Description:
         max_tokens=500
     )
     
-    text = response.choices[0].message.content.strip()
+    text = extract_json(response.choices[0].message.content)
     try:
         skills = json.loads(text)
         return skills if isinstance(skills, list) else []
@@ -61,7 +76,7 @@ Target role: {target_role}
         max_tokens=800
     )
     
-    text = response.choices[0].message.content.strip()
+    text = extract_json(response.choices[0].message.content)
     try:
         text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
@@ -97,7 +112,7 @@ User skills: {user_skills}
         max_tokens=500
     )
     
-    text = response.choices[0].message.content.strip()
+    text = extract_json(response.choices[0].message.content)
     try:
         text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
