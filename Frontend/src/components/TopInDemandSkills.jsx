@@ -34,7 +34,7 @@ export default function TopInDemandSkills({ snapshot }) {
         onClick={() => setOpen((v) => !v)}
       >
         <span className="demand-snapshot__toggle-text">
-          <span className="demand-snapshot__toggle-main">Top in-demand skills</span>
+          <span className="demand-snapshot__toggle-main">Top skills to add</span>
           {contextLine ? (
             <span className="demand-snapshot__context">{contextLine}</span>
           ) : null}

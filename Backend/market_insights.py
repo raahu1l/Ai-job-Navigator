@@ -130,6 +130,17 @@ def _find_count_for_user_skill(skill: str, skill_counts: dict[str, int]) -> tupl
     return None, 0
 
 
+def _skill_matches_user(skill: str, user_norm: set[str]) -> bool:
+    """Return true if a market skill is already covered by the user's stated skills."""
+    sk = normalize_skill_key(skill)
+    if not sk:
+        return False
+    for uk in user_norm:
+        if uk and (sk == uk or sk in uk or uk in sk):
+            return True
+    return False
+
+
 def build_market_demand_insight(
     jobs: list[dict] | None,
     missing_skills: list[str],
@@ -308,28 +319,36 @@ def build_skill_demand_dashboard(
     Compact demand snapshot for the dashboard: domain from user skills + frequencies from live jobs only.
     """
     us = [s for s in (user_skills or []) if isinstance(s, str) and s.strip()]
+    user_norm = {normalize_skill_key(s) for s in us}
     domain = detect_skill_domain(us)
     dv = skill_demand_from_jobs(jobs)
     total = dv["total_jobs"]
-    top = list(dv["top_skills"])
+    all_top = list(dv["top_skills"])
+    opportunity_top = [
+        row for row in all_top if not _skill_matches_user(str(row.get("skill") or ""), user_norm)
+    ]
 
     if total <= 0:
         insight_line = (
             "Run a search with live job data to unlock skill-level demand and match-impact estimates."
         )
-    elif not top:
+    elif opportunity_top:
+        insight_line = _concise_opportunity_line(domain, jobs, opportunity_top, total)
+    elif all_top:
+        insight_line = (
+            "You already cover the strongest extracted skills in this batch; deepen proof with projects or add a complementary tool."
+        )
+    else:
         insight_line = (
             "Few concrete tools surfaced from this batch—try broader role keywords to sharpen demand signals."
         )
-    else:
-        insight_line = _concise_opportunity_line(domain, jobs, top, total)
 
     return {
         "domain_key": domain,
         "domain_label": domain_display_label(domain),
         "market_context_line": domain_market_subtitle(domain),
         "total_jobs_analyzed": total,
-        "top_skills": top[:5],
+        "top_skills": opportunity_top[:5],
         "insight_line": insight_line.strip(),
         "fact_lines": dv["facts_lines"][:5],
     }
@@ -358,6 +377,12 @@ def build_live_batch_market_analysis(
 
     us_list = [s for s in (user_skills or []) if isinstance(s, str) and s.strip()]
     user_norm = {normalize_skill_key(s) for s in us_list}
+    owned_top = [
+        row for row in top if _skill_matches_user(str(row.get("skill") or ""), user_norm)
+    ]
+    opportunity_top = [
+        row for row in top if not _skill_matches_user(str(row.get("skill") or ""), user_norm)
+    ]
 
     top_labels = [t["skill"] for t in top[:8]]
     pair_counts: Counter[tuple[str, str]] = Counter()
@@ -389,17 +414,30 @@ def build_live_batch_market_analysis(
             )
 
     parts_a: list[str] = []
-    if top:
+    if owned_top:
+        t0 = owned_top[0]
+        parts_a.append(
+            f"Your current stack is visible in this market: {t0['skill']} appears in "
+            f"{t0['jobs_with_skill']} of {total} roles ({float(t0['pct_of_jobs']):.1f}% of this batch)."
+        )
+        if len(owned_top) > 1:
+            t1 = owned_top[1]
+            parts_a.append(
+                f"{t1['skill']} also appears in {float(t1['pct_of_jobs']):.1f}% of the same postings."
+            )
+    elif top:
         t0 = top[0]
         parts_a.append(
-            f"{t0['skill']} showed up in {t0['jobs_with_skill']} of {total} roles "
-            f"({float(t0['pct_of_jobs']):.1f}% of this batch)."
+            f"{t0['skill']} is the strongest extracted signal in this batch, appearing in "
+            f"{t0['jobs_with_skill']} of {total} roles ({float(t0['pct_of_jobs']):.1f}%)."
         )
-        if len(top) > 1:
-            t1 = top[1]
-            parts_a.append(
-                f"{t1['skill']} appeared in {float(t1['pct_of_jobs']):.1f}% of the same postings."
-            )
+
+    if opportunity_top:
+        gap = opportunity_top[0]
+        parts_a.append(
+            f"The clearest next-skill opportunity is {gap['skill']}, mentioned in "
+            f"{gap['jobs_with_skill']} postings ({float(gap['pct_of_jobs']):.1f}%)."
+        )
 
     parts_b: list[str] = []
     if pair_counts:
@@ -455,15 +493,20 @@ def build_live_batch_market_analysis(
         )
 
     biggest = ""
-    for row in top:
-        sk = str(row.get("skill") or "")
-        if normalize_skill_key(sk) not in user_norm:
-            biggest = sk
-            break
-    if not biggest and top:
-        biggest = str(top[0]["skill"])
-    if not biggest and skill_counts:
-        biggest = sorted(skill_counts.keys(), key=lambda k: (-skill_counts[k], k.lower()))[0]
+    if opportunity_top:
+        row = opportunity_top[0]
+        noun = domain_role_match_noun(detect_skill_domain(us_list))
+        biggest = (
+            f"Learning {row['skill']} could unlock up to ~{float(row['pct_of_jobs']):g}% more "
+            f"{noun} matches ({row['jobs_with_skill']} of {total} postings)."
+        )
+    elif top:
+        biggest = "You already cover the strongest extracted skills in this batch."
+    elif skill_counts:
+        for skill, _cnt in sorted(skill_counts.items(), key=lambda k: (-k[1], k[0].lower())):
+            if not _skill_matches_user(skill, user_norm):
+                biggest = skill
+                break
 
     p0 = float(top[0]["pct_of_jobs"]) if top else 0.0
     if p0 >= 40:

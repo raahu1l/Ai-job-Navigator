@@ -341,6 +341,22 @@ def prioritize_trending_for_domain(
     """Reorder trending items so domain-hint skills appear first when present, then by count."""
     if not trending:
         return []
+    broad_by_domain = {
+        DOMAIN_TECH: {"sales", "marketing", "finance", "hr", "recruiting", "crm"},
+        DOMAIN_DESIGN: {"sales", "finance", "hr", "recruiting"},
+        DOMAIN_FINANCE: {"sales", "marketing", "hr", "recruiting"},
+        DOMAIN_SALES: {"finance", "hr", "recruiting"},
+        DOMAIN_MARKETING: {"finance", "hr", "recruiting"},
+        DOMAIN_HR: {"finance", "marketing"},
+    }
+    blocked = broad_by_domain.get(domain, set())
+    if blocked:
+        trending = [
+            t for t in trending
+            if normalize_skill_key(str(t.get("skill") or "")) not in blocked
+        ]
+        if not trending:
+            return []
     hints = DOMAIN_TRENDING_HINTS.get(domain, DOMAIN_TRENDING_HINTS[DOMAIN_GENERAL])
     hint_lower = {h.lower() for h in hints}
     by_skill = {normalize_skill_key(t["skill"]): t for t in trending}
