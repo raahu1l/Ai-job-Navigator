@@ -12,6 +12,7 @@ from skill_domain import (
     DOMAIN_TECH,
     DOMAIN_GENERAL,
     detect_skill_domain,
+    detect_domain_from_job_text,
     domain_job_search_query,
     prioritize_trending_for_domain,
 )
@@ -89,9 +90,10 @@ _DESIGN_TITLE_POSITIVE = (
     "designer", "ux", "ui", "user experience", "figma", "visual", "creative", "product design",
 )
 
-_MIN_COMPOSITE_SCORE = 10.0
-_HIT_BONUS_CAP = 30.0
-_HIT_BONUS_PER_SKILL = 10.0
+_MIN_COMPOSITE_SCORE = 1.0
+_HIT_BONUS_CAP = 28.0
+_HIT_BONUS_PER_SKILL = 8.0
+_LIVE_RESULTS_CAP = 50
 
 
 def _user_has_required_skill(
@@ -194,9 +196,16 @@ def _should_drop_offtopic(
     user_hits: int,
     match_score: float,
     n_matched: int,
+    job_domain: str,
 ) -> bool:
     """Drop obvious cross-domain noise when there is no skill signal."""
     if user_hits >= 1 or n_matched >= 1 or match_score >= 15:
+        return False
+    if (
+        domain != DOMAIN_GENERAL
+        and job_domain != DOMAIN_GENERAL
+        and domain == job_domain
+    ):
         return False
 
     if domain == DOMAIN_TECH:
@@ -250,78 +259,103 @@ def _analyze_live_jobs(
     results: list[dict] = []
 
     for job in job_results:
-        if not isinstance(job, dict):
-            continue
-
-        blob = _job_text_blob(job)
-        required_skills = _required_skills_from_job(job)
-        if not required_skills:
-            inferred: list[str] = []
-            for s in user_skills_list:
-                if _skill_mentioned_in_blob_lower(s, blob):
-                    inferred.append(s)
-            required_skills = filter_skill_list(inferred)[:12]
-
-        matched_skills: list[str] = []
-        missing_skills: list[str] = []
-
-        if not required_skills:
-            match_score = 0.0
-        else:
-            for disp in required_skills:
-                if _user_has_required_skill(disp, user_skill_keys, skills_list):
-                    matched_skills.append(disp)
-                else:
-                    missing_skills.append(disp)
-
-            total_req = len(matched_skills) + len(missing_skills)
-            if missing_skills:
-                match_score = round((len(matched_skills) / total_req) * 100, 2) if total_req else 0.0
-            else:
-                match_score = 100.0
-
-        user_hits = _user_skill_presence_hits(user_skills_list, blob)
-        title_l = _title_lower(job)
-
-        # No extractable requirements and no evidence user skills appear → skip
-        if not required_skills and user_hits == 0:
-            continue
-
-        hit_bonus = min(_HIT_BONUS_CAP, _HIT_BONUS_PER_SKILL * float(user_hits))
-        composite = min(100.0, match_score + hit_bonus)
-
-        if composite < _MIN_COMPOSITE_SCORE and len(matched_skills) == 0 and user_hits == 0:
-            continue
-
-        if _should_drop_offtopic(
-            user_domain,
-            title_l,
-            user_hits=user_hits,
-            match_score=match_score,
-            n_matched=len(matched_skills),
-        ):
-            continue
-
-        if any(m in title_l for m in _NOISE_TITLE_MARKERS):
-            if user_hits < 1 and len(matched_skills) < 1 and match_score < 28:
+        try:
+            if not isinstance(job, dict):
                 continue
 
-        display_score = round(composite, 2)
+            blob = _job_text_blob(job)
+            job_domain = detect_domain_from_job_text(job)
+            required_skills = _required_skills_from_job(job)
+            if not required_skills:
+                inferred: list[str] = []
+                for s in user_skills_list:
+                    if _skill_mentioned_in_blob_lower(s, blob):
+                        inferred.append(s)
+                required_skills = filter_skill_list(inferred)[:12]
 
-        results.append(
-            {
-                "job_id": str(job.get("job_id", "")),
-                "title": str(job.get("title") or "Role"),
-                "company": str(job.get("company") or "Unknown"),
-                "match_score": display_score,
-                "required_skills": required_skills,
-                "matched_skills": matched_skills,
-                "missing_skills": missing_skills,
-            }
-        )
+            matched_skills: list[str] = []
+            missing_skills: list[str] = []
+            total_req = 0
+
+            domain_aligned = (
+                user_domain != DOMAIN_GENERAL
+                and job_domain != DOMAIN_GENERAL
+                and user_domain == job_domain
+            )
+
+            if not required_skills:
+                match_score = 0.0
+            else:
+                for disp in required_skills:
+                    if _user_has_required_skill(disp, user_skill_keys, user_skills_list):
+                        matched_skills.append(disp)
+                    else:
+                        missing_skills.append(disp)
+
+                total_req = len(matched_skills) + len(missing_skills)
+                if missing_skills:
+                    match_score = round((len(matched_skills) / total_req) * 100, 2) if total_req else 0.0
+                else:
+                    match_score = 100.0
+
+            user_hits = _user_skill_presence_hits(user_skills_list, blob)
+            title_l = _title_lower(job)
+
+            # No extractable requirements and no evidence user skills appear → skip
+            if not required_skills and user_hits == 0:
+                continue
+
+            hit_bonus = min(_HIT_BONUS_CAP, _HIT_BONUS_PER_SKILL * float(user_hits))
+            composite = min(100.0, match_score + hit_bonus)
+
+            has_overlap = len(matched_skills) >= 1 or user_hits >= 1
+            # Domain alone is not a match. A live job must mention at least one
+            # user skill or have one extracted requirement matching the user.
+            if not has_overlap:
+                continue
+
+            if composite < _MIN_COMPOSITE_SCORE:
+                continue
+
+            if _should_drop_offtopic(
+                user_domain,
+                title_l,
+                user_hits=user_hits,
+                match_score=match_score,
+                n_matched=len(matched_skills),
+                job_domain=job_domain,
+            ):
+                continue
+
+            if any(m in title_l for m in _NOISE_TITLE_MARKERS):
+                if (
+                    user_hits < 1
+                    and len(matched_skills) < 1
+                    and match_score < 28
+                    and not domain_aligned
+                ):
+                    continue
+
+            display_score = round(composite, 2)
+
+            results.append(
+                {
+                    "job_id": str(job.get("job_id", "")),
+                    "title": str(job.get("title") or "Role"),
+                    "company": str(job.get("company") or "Unknown"),
+                    "match_score": display_score,
+                    "required_skills": required_skills,
+                    "matched_skills": matched_skills,
+                    "missing_skills": missing_skills,
+                }
+            )
+        except Exception as e:
+            # Skip this job and continue processing others
+            print(f"Warning: Failed to analyze job {job.get('job_id', '?')}: {e}")
+            continue
 
     results.sort(key=lambda item: item["match_score"], reverse=True)
-    return [_sanitize_job_result(r) for r in results]
+    return [_sanitize_job_result(r) for r in results[:_LIVE_RESULTS_CAP]]
 
 
 _NO_MATCH_MSG = (
@@ -330,73 +364,84 @@ _NO_MATCH_MSG = (
 
 
 def analyze(user_skills: list, job_results: list | None = None) -> list | dict:
-    skills_list = [str(s).strip() for s in (user_skills if isinstance(user_skills, list) else []) if str(s).strip()]
-    user_skill_keys = expand_user_skill_match_keys(skills_list)
-    if not user_skill_keys:
-        return {"results": [], "message": _NO_MATCH_MSG}
-
-    # Live payloads from Adzuna (or upstream) must never fall through to static Kaggle categories.
-    if isinstance(job_results, list) and len(job_results) > 0:
-        n = len(job_results)
-        print("Using LIVE Adzuna analysis")
-        print(f"  (live job_results: {n})")
-        live = _analyze_live_jobs(skills_list, user_skill_keys, job_results)
-        live = [j for j in live if (j.get("match_score") or 0) > 0]
-        if not live:
+    try:
+        skills_list = [str(s).strip() for s in (user_skills if isinstance(user_skills, list) else []) if str(s).strip()]
+        user_skill_keys = expand_user_skill_match_keys(skills_list)
+        if not user_skill_keys:
             return {"results": [], "message": _NO_MATCH_MSG}
-        return live
 
-    print("Using FALLBACK static dataset")
-    results = []
+        # Live payloads from Adzuna (or upstream) must never fall through to static Kaggle categories.
+        if isinstance(job_results, list) and len(job_results) > 0:
+            n = len(job_results)
+            print("Using LIVE Adzuna analysis")
+            print(f"  (live job_results: {n})")
+            try:
+                live = _analyze_live_jobs(skills_list, user_skill_keys, job_results)
+            except Exception as e:
+                print(f"Warning: Live job analysis failed: {e}")
+                live = []
+            
+            if not live:
+                return {"results": [], "message": _NO_MATCH_MSG}
+            return live
 
-    for job in JOBS:
-        job_skills = job.get("skills", [])
-        total_job_skills = len(job_skills)
-        if total_job_skills == 0:
-            continue
+        print("Using FALLBACK static dataset")
+        results = []
 
-        required_skills = filter_skill_list(
-            [str(skill).strip() for skill in job_skills if str(skill).strip()]
-        )
-        matched_skills: list[str] = []
-        missing_skills: list[str] = []
+        for job in JOBS:
+            try:
+                job_skills = job.get("skills", [])
+                total_job_skills = len(job_skills)
+                if total_job_skills == 0:
+                    continue
 
-        for skill in required_skills:
-            if _user_has_required_skill(skill, user_skill_keys, skills_list):
-                matched_skills.append(skill)
-            else:
-                missing_skills.append(skill)
+                required_skills = filter_skill_list(
+                    [str(skill).strip() for skill in job_skills if str(skill).strip()]
+                )
+                matched_skills: list[str] = []
+                missing_skills: list[str] = []
 
-        matched_skills = filter_skill_list(matched_skills)
-        missing_skills = filter_skill_list(missing_skills)
-        total_effective = len(matched_skills) + len(missing_skills)
-        if total_effective == 0:
-            continue
-        if missing_skills:
-            match_score = round((len(matched_skills) / total_effective) * 100, 2)
-        else:
-            match_score = 100.0
-        if missing_skills and match_score == 0:
-            continue
+                for skill in required_skills:
+                    if _user_has_required_skill(skill, user_skill_keys, skills_list):
+                        matched_skills.append(skill)
+                    else:
+                        missing_skills.append(skill)
 
-        results.append(
-            {
-                "job_id": str(job.get("job_id", "")),
-                "title": job.get("title", ""),
-                "company": job.get("company", ""),
-                "match_score": match_score,
-                "required_skills": required_skills,
-                "matched_skills": matched_skills,
-                "missing_skills": missing_skills,
-            }
-        )
+                matched_skills = filter_skill_list(matched_skills)
+                missing_skills = filter_skill_list(missing_skills)
+                total_effective = len(matched_skills) + len(missing_skills)
+                if total_effective == 0:
+                    continue
+                if missing_skills:
+                    match_score = round((len(matched_skills) / total_effective) * 100, 2)
+                else:
+                    match_score = 100.0
+                if missing_skills and match_score == 0:
+                    continue
 
-    results.sort(key=lambda item: item["match_score"], reverse=True)
-    results = [r for r in results if (r.get("match_score") or 0) > 0]
-    if results:
-        return [_sanitize_job_result(r) for r in results[:40]]
+                results.append(
+                    {
+                        "job_id": str(job.get("job_id", "")),
+                        "title": job.get("title", ""),
+                        "company": job.get("company", ""),
+                        "match_score": match_score,
+                        "required_skills": required_skills,
+                        "matched_skills": matched_skills,
+                        "missing_skills": missing_skills,
+                    }
+                )
+            except Exception as e:
+                print(f"Warning: Failed to analyze job {job.get('job_id', '?')}: {e}")
+                continue
 
-    return {"results": [], "message": _NO_MATCH_MSG}
+        results.sort(key=lambda item: item["match_score"], reverse=True)
+        if results:
+            return [_sanitize_job_result(r) for r in results[:40]]
+
+        return {"results": [], "message": _NO_MATCH_MSG}
+    except Exception as e:
+        print(f"Error in analyze(): {e}")
+        return {"results": [], "message": "Unable to analyze skills at this moment. Please try again."}
 
 
 def get_trending(top_n: int = 15, user_skills: list | None = None) -> list:

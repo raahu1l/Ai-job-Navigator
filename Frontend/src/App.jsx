@@ -11,7 +11,6 @@ import {
   DEFAULT_MARKET_ANALYSIS,
   FALLBACK_TRENDING_CHART,
   normalizeMarketAnalysis,
-  buildMinimalPlaceholderResults,
   isExploratoryResults,
 } from "./analysisFallbacks";
 
@@ -206,10 +205,11 @@ function App() {
 
       if (analyzeMessage && nextResults.length === 0) {
         setError(analyzeMessage);
-      }
-
-      if (nextResults.length === 0 && jobs.length === 0 && !analyzeMessage) {
-        nextResults = buildMinimalPlaceholderResults(skills);
+      } else if (nextResults.length === 0 && !analyzeMessage) {
+        // No results and no message means weak matches
+        const friendlyMessage = "We couldn't find strong matches for these skills in " 
+          + (location.charAt(0).toUpperCase() + location.slice(1)) + ". Try broader technical or domain-specific skills.";
+        setError(friendlyMessage);
       }
 
       setResults(nextResults);
@@ -259,7 +259,16 @@ function App() {
         setIsResultsHighlighted(false);
       }, 1200);
     } catch (err) {
-      setError(err.message || "Something went wrong");
+      const errorMsg = err.message || "Something went wrong";
+      let userFriendlyMsg = errorMsg;
+      
+      if (errorMsg.includes("Failed to analyze")) {
+        userFriendlyMsg = "We couldn't find strong matches. Try using broader skills like 'Python', 'Java', 'React', or 'AWS'.";
+      } else if (errorMsg.includes("fetch")) {
+        userFriendlyMsg = "Network error. Please check your connection and try again.";
+      }
+      
+      setError(userFriendlyMsg);
       setActiveAgent(-1);
       setResults([]);
       setMarketAnalysis({ ...DEFAULT_MARKET_ANALYSIS });
@@ -361,7 +370,7 @@ function App() {
   return (
     <div>
       <nav className="navbar">
-        <div className="navbar-brand">⚡ SkillNav</div>
+        <div className="navbar-brand">SkillForge</div>
         <div className="navbar-sub">AI Job & Skill Navigator</div>
       </nav>
 
@@ -479,7 +488,7 @@ function App() {
                       ? "Powered by Adzuna market data"
                       : jobFetchMeta.source === "fallback"
                         ? "Curated sample listings — comparable matching experience"
-                        : "SkillNav"}
+                        : "SkillForge"}
                   </p>
                   {listingStats.fetched > 0 && (
                     <p className="live-data-row__tertiary">

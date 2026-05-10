@@ -335,6 +335,152 @@ def build_skill_demand_dashboard(
     }
 
 
+def build_live_batch_market_analysis(
+    jobs: list[dict],
+    user_skills: list[str],
+) -> dict[str, str]:
+    """
+    Non-LLM market copy derived only from this batch: skill frequencies, pairs, locations.
+    Shape matches /api/market-analysis (market_summary, your_strength, biggest_opportunity, demand_trend).
+    """
+    dv = skill_demand_from_jobs(jobs)
+    total = int(dv["total_jobs"])
+    top = list(dv["top_skills"])
+    skill_counts: dict[str, int] = dict(dv["skill_counts"])
+
+    if total <= 0:
+        return {
+            "market_summary": "",
+            "your_strength": "",
+            "biggest_opportunity": "",
+            "demand_trend": "stable",
+        }
+
+    us_list = [s for s in (user_skills or []) if isinstance(s, str) and s.strip()]
+    user_norm = {normalize_skill_key(s) for s in us_list}
+
+    top_labels = [t["skill"] for t in top[:8]]
+    pair_counts: Counter[tuple[str, str]] = Counter()
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        found = {normalize_skill_key(str(x)) for x in extract_technical_skills_from_job(job)}
+        present = [lbl for lbl in top_labels if normalize_skill_key(lbl) in found]
+        for i in range(len(present)):
+            for j in range(i + 1, len(present)):
+                pair = tuple(sorted([present[i], present[j]], key=lambda x: x.lower()))
+                pair_counts[pair] += 1
+
+    loc_counter: Counter[str] = Counter()
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        loc = str(job.get("location") or "").strip()
+        if loc:
+            loc_counter[loc.lower()] += 1
+    loc_note = ""
+    if loc_counter:
+        raw_loc, loc_n = loc_counter.most_common(1)[0]
+        if loc_n >= max(3, int(total * 0.12)):
+            loc_disp = raw_loc.title() if raw_loc.islower() else raw_loc
+            lpct = round(100 * loc_n / total, 0)
+            loc_note = (
+                f" Roughly {lpct:.0f}% of these listings were tagged around {loc_disp}."
+            )
+
+    parts_a: list[str] = []
+    if top:
+        t0 = top[0]
+        parts_a.append(
+            f"{t0['skill']} showed up in {t0['jobs_with_skill']} of {total} roles "
+            f"({float(t0['pct_of_jobs']):.1f}% of this batch)."
+        )
+        if len(top) > 1:
+            t1 = top[1]
+            parts_a.append(
+                f"{t1['skill']} appeared in {float(t1['pct_of_jobs']):.1f}% of the same postings."
+            )
+
+    parts_b: list[str] = []
+    if pair_counts:
+        (a, b), cnt = pair_counts.most_common(1)[0]
+        if cnt >= 2:
+            parts_b.append(
+                f"{a} and {b} co-occurred in {cnt} listings here—a recurring combination in this search window."
+            )
+
+    if not parts_b and top:
+        titles_blob = " ".join(
+            str(j.get("title") or "").lower() for j in jobs if isinstance(j, dict)
+        )
+        anchor = normalize_skill_key(top[0]["skill"])
+        if anchor and anchor in titles_blob:
+            parts_b.append(
+                f"Many titles in this batch explicitly call out {top[0]['skill']}, not only the body text."
+            )
+
+    market_summary = " ".join(parts_a + parts_b).strip()
+    if loc_note:
+        market_summary = f"{market_summary}{loc_note}".strip()
+
+    if not market_summary:
+        fl = dv.get("facts_lines") or []
+        if fl:
+            market_summary = " ".join(fl[:2])
+        else:
+            market_summary = (
+                f"Analyzed {total} live listings; extracted demand signals were thin after filtering—"
+                "try slightly broader role keywords to surface more tool-level mentions."
+            )
+
+    best_u: str | None = None
+    best_c = 0
+    for us in us_list:
+        canon, cnt = _find_count_for_user_skill(us, skill_counts)
+        if cnt > best_c:
+            best_c = cnt
+            best_u = canon or us
+    if best_u and best_c > 0:
+        your_strength = (
+            f"Your stated {best_u} aligns with this batch—it appears in {best_c} of {total} postings."
+        )
+    elif us_list and top:
+        your_strength = (
+            f"Cross-reference {', '.join(us_list[:4])} with the frequency lines above; "
+            f"the strongest tool signal here is {top[0]['skill']}."
+        )
+    else:
+        your_strength = (
+            "Map your listed skills to the counts above to see where you already match employer wording."
+        )
+
+    biggest = ""
+    for row in top:
+        sk = str(row.get("skill") or "")
+        if normalize_skill_key(sk) not in user_norm:
+            biggest = sk
+            break
+    if not biggest and top:
+        biggest = str(top[0]["skill"])
+    if not biggest and skill_counts:
+        biggest = sorted(skill_counts.keys(), key=lambda k: (-skill_counts[k], k.lower()))[0]
+
+    p0 = float(top[0]["pct_of_jobs"]) if top else 0.0
+    if p0 >= 40:
+        demand_trend = "growing"
+    elif p0 >= 18:
+        demand_trend = "stable"
+    else:
+        demand_trend = "stable"
+
+    return {
+        "market_summary": market_summary.strip(),
+        "your_strength": your_strength.strip(),
+        "biggest_opportunity": biggest,
+        "demand_trend": demand_trend,
+    }
+
+
 def merge_roadmap_response(
     llm_payload: dict,
     *,

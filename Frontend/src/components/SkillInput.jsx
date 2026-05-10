@@ -27,7 +27,10 @@ function SkillInput({
     if (!trimmed) {
       return;
     }
-    setSkills((prev) => [...prev, trimmed]);
+    // Normalize: avoid adding duplicate skills
+    if (!skills.some(s => s.toLowerCase() === trimmed.toLowerCase())) {
+      setSkills((prev) => [...prev, trimmed]);
+    }
     setInputValue("");
   };
 
@@ -41,7 +44,19 @@ function SkillInput({
   const handleInputChange = (event) => {
     const value = event.target.value;
     if (value.includes(",")) {
-      addSkill(value.replace(",", ""));
+      const parts = value.split(",");
+      parts.forEach((part, index) => {
+        if (index === parts.length - 1) {
+          // Last part might still be being typed, keep it
+          setInputValue(part);
+        } else {
+          // Earlier parts are complete, add them
+          const trimmed = part.trim();
+          if (trimmed) {
+            addSkill(trimmed);
+          }
+        }
+      });
       return;
     }
     setInputValue(value);

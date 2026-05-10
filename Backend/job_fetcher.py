@@ -61,16 +61,18 @@ def _build_debug(
 
 def _adzuna_search_what_from_keywords(keywords: str) -> str:
     """
-    Adzuna returns few/no hits for long multi-skill strings. Use the primary skill
-    plus "developer" for broader, relevant tech results.
+    Keep the caller-built search phrase intact.
+
+    Older logic collapsed every query to the first token plus "developer"
+    (for example: "mongo sql python java docker" became "mongo developer").
+    That made user-entered skills after the first token effectively invisible.
+    Query construction now happens in skill_domain.build_job_search_queries(),
+    which emits focused, short phrases that are safe to pass through directly.
     """
     raw = (keywords or "").strip()
     if not raw:
         return ""
-    skills_list = [s.strip().lower() for s in raw.split() if s.strip()]
-    if not skills_list:
-        return raw
-    return f"{skills_list[0]} developer"
+    return " ".join(raw.split())[:120]
 
 
 def fetch_jobs(keywords: str, location: str = "india", results: int = 50) -> dict:
@@ -276,7 +278,7 @@ def fetch_jobs_multi(
     last_non_live: dict | None = None
     debug_parts: list[dict] = []
 
-    for q in clean_queries[:3]:
+    for q in clean_queries[:8]:
         result = fetch_jobs(q, location, results=results_per_query)
         if result.get("source") != "adzuna":
             last_non_live = result

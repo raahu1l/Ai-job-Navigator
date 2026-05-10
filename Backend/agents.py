@@ -3,7 +3,12 @@ import json
 from groq import Groq
 from dotenv import load_dotenv
 
-from market_insights import build_market_demand_insight, merge_roadmap_response, skill_demand_from_jobs
+from market_insights import (
+    build_live_batch_market_analysis,
+    build_market_demand_insight,
+    merge_roadmap_response,
+    skill_demand_from_jobs,
+)
 from skill_domain import (
     DOMAIN_GENERAL,
     DOMAIN_TRENDING_HINTS,
@@ -325,6 +330,16 @@ def analyze_market_demand(
     user_skills = filter_skill_list(user_skills if isinstance(user_skills, list) else [])
     domain = detect_skill_domain(user_skills)
     domain_hint = domain_market_context(domain)
+
+    if isinstance(live_jobs, list) and len(live_jobs) > 0:
+        data_copy = build_live_batch_market_analysis(live_jobs, user_skills)
+        if (data_copy.get("market_summary") or "").strip():
+            return {
+                "market_summary": data_copy["market_summary"],
+                "your_strength": data_copy.get("your_strength") or "",
+                "biggest_opportunity": data_copy.get("biggest_opportunity") or "",
+                "demand_trend": data_copy.get("demand_trend") or "stable",
+            }
 
     live_block = ""
     if isinstance(live_jobs, list) and len(live_jobs) > 0:

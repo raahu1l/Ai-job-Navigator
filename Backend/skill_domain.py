@@ -160,6 +160,23 @@ def detect_skill_domain(user_skills: list | None) -> str:
     return scores.most_common(1)[0][0]
 
 
+def detect_domain_from_job_text(job: dict | None) -> str:
+    """Infer posting domain from title + description (same triggers as user skills)."""
+    if not isinstance(job, dict):
+        return DOMAIN_GENERAL
+    blob = f"{job.get('title', '')} {job.get('description', '')}".strip().lower()
+    if not blob:
+        return DOMAIN_GENERAL
+    scores: Counter[str] = Counter()
+    for domain, triggers in _DOMAIN_TRIGGERS:
+        for t in triggers:
+            if t in blob:
+                scores[domain] += 1
+    if not scores:
+        return DOMAIN_GENERAL
+    return scores.most_common(1)[0][0]
+
+
 def domain_job_search_query(domain: str) -> str:
     return DOMAIN_JOB_SEARCH_QUERY.get(domain, DOMAIN_JOB_SEARCH_QUERY[DOMAIN_GENERAL])
 
@@ -201,7 +218,8 @@ def domain_role_search_boost(domain: str) -> str:
 
 
 def normalize_user_skills_list(raw_skills: list | None, keywords_fallback: str = "") -> list[str]:
-    """Flatten skills from UI or comma-separated keywords; preserves order, dedupes."""
+    """Flatten skills from UI or comma-separated keywords; preserves order, dedupes.
+    Handles edge cases: multiple commas, whitespace, empty strings."""
     out: list[str] = []
     seen: set[str] = set()
     if raw_skills and isinstance(raw_skills, list):
@@ -233,31 +251,51 @@ def normalize_user_skills_list(raw_skills: list | None, keywords_fallback: str =
 
 def build_job_search_queries(user_skills: list[str]) -> list[str]:
     """
-    Build 1–2 Adzuna `what` strings: skill-heavy + domain role boost for recall.
-    Keeps strings within practical API length limits.
+    Build focused Adzuna `what` strings from the user's actual skills.
+
+    Adzuna can return sparse or noisy results for one long multi-skill query.
+    Search several short skill+role phrases, then merge and rank the returned
+    postings downstream.
     """
     skills = normalize_user_skills_list(user_skills, "")
     if not skills:
         return [domain_job_search_query(DOMAIN_GENERAL)]
 
     domain = detect_skill_domain(skills)
-    role_boost = domain_role_search_boost(domain)
-    # Up to 10 skill tokens (user-typed + suggestions all treated the same)
-    skill_part = " ".join(skills[:10])
-
-    q_primary = f"{skill_part} {role_boost}".strip()
-    q_primary = " ".join(q_primary.split())[:220]
-
-    # Second query: domain job family + top skills (catches postings that omit stack keywords)
-    domain_base = domain_job_search_query(domain)
-    q_secondary = f"{domain_base} {' '.join(skills[:6])}".strip()
-    q_secondary = " ".join(q_secondary.split())[:220]
-
     queries: list[str] = []
-    for q in (q_primary, q_secondary):
+
+    role_by_domain = {
+        DOMAIN_TECH: "developer",
+        DOMAIN_DESIGN: "designer",
+        DOMAIN_FINANCE: "analyst",
+        DOMAIN_SALES: "sales",
+        DOMAIN_MARKETING: "marketing",
+        DOMAIN_HR: "recruiter",
+        DOMAIN_GENERAL: "specialist",
+    }
+    role = role_by_domain.get(domain, role_by_domain[DOMAIN_GENERAL])
+
+    # Treat manually typed lowercase skills exactly like suggestion chips:
+    # every important user skill gets a chance to fetch matching postings.
+    for skill in skills[:6]:
+        s = " ".join(str(skill).strip().split())
+        if not s:
+            continue
+        q = f"{s} {role}".strip()
         if q and q not in queries:
             queries.append(q)
-    return queries[:2]
+
+    # Add one broader domain query for recall. The matcher later rejects jobs
+    # with no overlap, so this should not leak generic unrelated roles.
+    if domain == DOMAIN_TECH:
+        q = f"software engineer {' '.join(skills[:4])}".strip()
+    else:
+        q = f"{domain_job_search_query(domain)} {' '.join(skills[:3])}".strip()
+    q = " ".join(q.split())[:120]
+    if q and q not in queries:
+        queries.append(q)
+
+    return queries[:7]
 
 
 def domain_market_context(domain: str) -> str:

@@ -292,8 +292,10 @@
 .chart-wrap {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   height: 300px;
-  min-height: 240px;
+  min-height: 300px;
+  flex-shrink: 0;
 }
 .card-title {
   font-size: 1.1rem;
@@ -1082,8 +1084,8 @@
     scroll-margin-top: 60px;
   }
   .chart-wrap {
-    height: 260px;
-    min-height: 220px;
+    height: 280px;
+    min-height: 280px;
   }
   .lp-header {
     flex-direction: column;

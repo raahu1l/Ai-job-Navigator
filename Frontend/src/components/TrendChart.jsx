@@ -59,7 +59,7 @@ function TrendChart({ trending, usingFallback = false }) {
         <p className="chart-empty">Preparing market demand chart…</p>
       ) : (
         <div className="chart-wrap">
-          <ResponsiveContainer width="100%" height="100%" minHeight={280}>
+          <ResponsiveContainer width="100%" height={300}>
             <BarChart
               data={chartData}
               layout="vertical"
