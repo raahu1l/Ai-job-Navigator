@@ -295,7 +295,7 @@ def _concise_opportunity_line(
     s1 = top[0]["skill"]
     p1 = float(top[0]["pct_of_jobs"])
     if len(top) < 2:
-        return f"Adding {s1} could increase {noun} role matches by up to ~{p1:g}%."
+        return f"Learning {s1} could increase {noun} role matches by up to ~{p1:g}%."
     s2 = top[1]["skill"]
     c1 = int(top[0]["jobs_with_skill"])
     c2 = int(top[1]["jobs_with_skill"])
@@ -308,7 +308,7 @@ def _concise_opportunity_line(
         return (
             f"Learning {s1} and {s2} together could unlock ~{union_pct:g}% more matching opportunities."
         )
-    return f"Adding {s1} could increase {noun} role matches by up to ~{p1:g}%."
+    return f"Learning {s1} could increase {noun} role matches by up to ~{p1:g}%."
 
 
 def build_skill_demand_dashboard(

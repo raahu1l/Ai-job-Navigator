@@ -40,7 +40,22 @@ _USER_SKILL_ALIAS_GROUPS: tuple[frozenset[str], ...] = (
     frozenset({"kubernetes", "k8s"}),
     frozenset({"machine learning", "ml"}),
     frozenset({"artificial intelligence", "ai"}),
+    frozenset({"postgres", "postgresql", "postgre sql"}),
+    frozenset({"mongo", "mongodb", "mongo db"}),
 )
+
+_DISTINCT_DATABASE_SKILLS = frozenset({
+    "sql",
+    "mysql",
+    "postgresql",
+    "postgres",
+    "postgre sql",
+    "mongodb",
+    "mongo",
+    "mongo db",
+    "oracle",
+    "sqlite",
+})
 
 # Title hints that a role plausibly belongs to the user's domain (loose, for gating noise).
 _TECH_TITLE_POSITIVE = (
@@ -101,18 +116,21 @@ def _user_has_required_skill(
     user_skill_keys: set[str],
     skills_list: list[str],
 ) -> bool:
-    """Case-insensitive match: normalized equality or substring either way (user vs required)."""
+    """Case-insensitive match using exact/alias matches before cautious phrase overlap."""
     need = normalize_skill_key(disp)
     if need and need in user_skill_keys:
         return True
-    d = str(disp).strip().lower()
-    if not d:
+    if not need:
+        return False
+    if need in _DISTINCT_DATABASE_SKILLS:
         return False
     for us in skills_list:
-        u = str(us).strip().lower()
+        u = normalize_skill_key(str(us))
         if not u:
             continue
-        if d in u or u in d:
+        if u in _DISTINCT_DATABASE_SKILLS:
+            continue
+        if len(need) >= 4 and len(u) >= 4 and (need in u or u in need):
             return True
     return False
 
