@@ -59,6 +59,20 @@ def _build_debug(
     }
 
 
+def _adzuna_search_what_from_keywords(keywords: str) -> str:
+    """
+    Adzuna returns few/no hits for long multi-skill strings. Use the primary skill
+    plus "developer" for broader, relevant tech results.
+    """
+    raw = (keywords or "").strip()
+    if not raw:
+        return ""
+    skills_list = [s.strip().lower() for s in raw.split() if s.strip()]
+    if not skills_list:
+        return raw
+    return f"{skills_list[0]} developer"
+
+
 def fetch_jobs(keywords: str, location: str = "india", results: int = 50) -> dict:
     """
     Fetch live jobs from Adzuna API.
@@ -82,11 +96,12 @@ def fetch_jobs(keywords: str, location: str = "india", results: int = 50) -> dic
 
     country = COUNTRY_CODES.get(location.lower(), "in")
     base_url = f"https://api.adzuna.com/v1/api/jobs/{country}/search/1"
+    search_query = _adzuna_search_what_from_keywords(keywords)
     params = {
         "app_id": ADZUNA_APP_ID,
         "app_key": ADZUNA_APP_KEY,
-        "results_per_page": results,
-        "what": keywords or "",
+        "results_per_page": min(max(results, 1), 50),
+        "what": search_query,
     }
     # Optional location filter for cities / regions (not a country code)
     if location.lower() not in COUNTRY_CODES:

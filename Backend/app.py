@@ -35,7 +35,19 @@ def analyze_route():
         print(f"/api/analyze: LIVE job_results count={n_live}")
     else:
         print("/api/analyze: no job_results → matcher will use static fallback path")
-    return jsonify(analyze(skills, job_results))
+    out = analyze(skills, job_results)
+    _empty_area_msg = (
+        "No matching jobs in this area. Try broader skills or different location."
+    )
+    if isinstance(out, dict):
+        return jsonify({
+            "results": [],
+            "message": (out.get("message") or "").strip() or _empty_area_msg,
+        })
+    results = out if isinstance(out, list) else []
+    if not results:
+        return jsonify({"results": [], "message": _empty_area_msg})
+    return jsonify(results)
 
 
 @app.get("/api/trending")

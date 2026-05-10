@@ -94,6 +94,27 @@ _HIT_BONUS_CAP = 30.0
 _HIT_BONUS_PER_SKILL = 10.0
 
 
+def _user_has_required_skill(
+    disp: str,
+    user_skill_keys: set[str],
+    skills_list: list[str],
+) -> bool:
+    """Case-insensitive match: normalized equality or substring either way (user vs required)."""
+    need = normalize_skill_key(disp)
+    if need and need in user_skill_keys:
+        return True
+    d = str(disp).strip().lower()
+    if not d:
+        return False
+    for us in skills_list:
+        u = str(us).strip().lower()
+        if not u:
+            continue
+        if d in u or u in d:
+            return True
+    return False
+
+
 def expand_user_skill_match_keys(user_skills: list) -> set[str]:
     """Lowercase-normalized skill keys plus alias expansion for equitable matching."""
     base = {normalize_skill_key(str(s)) for s in user_skills if str(s).strip()}
@@ -248,8 +269,7 @@ def _analyze_live_jobs(
             match_score = 0.0
         else:
             for disp in required_skills:
-                need = normalize_skill_key(disp)
-                if need in user_skill_keys:
+                if _user_has_required_skill(disp, user_skill_keys, skills_list):
                     matched_skills.append(disp)
                 else:
                     missing_skills.append(disp)
@@ -304,18 +324,27 @@ def _analyze_live_jobs(
     return [_sanitize_job_result(r) for r in results]
 
 
-def analyze(user_skills: list, job_results: list | None = None) -> list:
+_NO_MATCH_MSG = (
+    "No matching jobs found. Try different location or broader skills like 'Python' or 'Java'."
+)
+
+
+def analyze(user_skills: list, job_results: list | None = None) -> list | dict:
     skills_list = [str(s).strip() for s in (user_skills if isinstance(user_skills, list) else []) if str(s).strip()]
     user_skill_keys = expand_user_skill_match_keys(skills_list)
     if not user_skill_keys:
-        return []
+        return {"results": [], "message": _NO_MATCH_MSG}
 
     # Live payloads from Adzuna (or upstream) must never fall through to static Kaggle categories.
     if isinstance(job_results, list) and len(job_results) > 0:
         n = len(job_results)
         print("Using LIVE Adzuna analysis")
         print(f"  (live job_results: {n})")
-        return _analyze_live_jobs(skills_list, user_skill_keys, job_results)
+        live = _analyze_live_jobs(skills_list, user_skill_keys, job_results)
+        live = [j for j in live if (j.get("match_score") or 0) > 0]
+        if not live:
+            return {"results": [], "message": _NO_MATCH_MSG}
+        return live
 
     print("Using FALLBACK static dataset")
     results = []
@@ -333,7 +362,7 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
         missing_skills: list[str] = []
 
         for skill in required_skills:
-            if normalize_skill_key(skill) in user_skill_keys:
+            if _user_has_required_skill(skill, user_skill_keys, skills_list):
                 matched_skills.append(skill)
             else:
                 missing_skills.append(skill)
@@ -363,29 +392,11 @@ def analyze(user_skills: list, job_results: list | None = None) -> list:
         )
 
     results.sort(key=lambda item: item["match_score"], reverse=True)
+    results = [r for r in results if (r.get("match_score") or 0) > 0]
     if results:
         return [_sanitize_job_result(r) for r in results[:40]]
 
-    fallback = []
-    for job in JOBS[:10]:
-        job_skills = filter_skill_list(
-            [str(skill).strip() for skill in job.get("skills", []) if str(skill).strip()]
-        )
-        fallback.append(
-            _sanitize_job_result(
-                {
-                    "job_id": str(job.get("job_id", "")),
-                    "title": job.get("title", ""),
-                    "company": job.get("company", ""),
-                    "match_score": 0.0,
-                    "required_skills": job_skills,
-                    "matched_skills": [],
-                    "missing_skills": job_skills,
-                }
-            )
-        )
-
-    return fallback
+    return {"results": [], "message": _NO_MATCH_MSG}
 
 
 def get_trending(top_n: int = 15, user_skills: list | None = None) -> list:

@@ -198,8 +198,17 @@ function App() {
         data = [];
       }
       let nextResults = Array.isArray(data) ? data : [];
+      let analyzeMessage = "";
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        nextResults = Array.isArray(data.results) ? data.results : [];
+        analyzeMessage = typeof data.message === "string" ? data.message.trim() : "";
+      }
 
-      if (nextResults.length === 0 && jobs.length === 0) {
+      if (analyzeMessage && nextResults.length === 0) {
+        setError(analyzeMessage);
+      }
+
+      if (nextResults.length === 0 && jobs.length === 0 && !analyzeMessage) {
         nextResults = buildMinimalPlaceholderResults(skills);
       }
 
